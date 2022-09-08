@@ -1,13 +1,18 @@
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { MouseEvent, useEffect, useRef, useState } from 'react';
+import { MouseEvent, useMemo, useEffect, useRef, useState } from 'react';
 import Controls from '../components/Controls';
 import ExtraControls from '../components/ExtraControls';
 import Logo from '../components/Logo';
-import { ToolState, tools } from '../helper/tools';
+import { tools, ToolState } from '../helper/tools';
 
 const Home: NextPage = () => {
   const [activeTool, setTool] = useState<ToolState>();
+  const [drawing, setDrawing] = useState(false);
+
+  const action = useMemo(() => {
+    return tools.find((tool) => tool.title === activeTool)?.action;
+  }, [activeTool]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -29,14 +34,24 @@ const Home: NextPage = () => {
   }, []);
 
   const start = (event: MouseEvent<HTMLCanvasElement>) => {
-    console.log(
-      tools.find((tool) => {
-        return tool.title === activeTool;
-      })
-    );
+    const { offsetX, offsetY } = event.nativeEvent;
+    if (!ctxRef.current || !action) return;
+
+    action.start(ctxRef.current, offsetX, offsetY);
+    setDrawing(true);
   };
-  const draw = (event: MouseEvent<HTMLCanvasElement>) => {};
-  const end = (event: MouseEvent<HTMLCanvasElement>) => {};
+  const draw = (event: MouseEvent<HTMLCanvasElement>) => {
+    const { offsetX, offsetY } = event.nativeEvent;
+    if (!ctxRef.current || !action || !drawing) return;
+
+    action.draw(ctxRef.current, offsetX, offsetY);
+  };
+  const end = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (!ctxRef.current || !action) return;
+
+    action.end(ctxRef.current);
+    setDrawing(false);
+  };
 
   return (
     <div>
