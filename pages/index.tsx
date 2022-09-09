@@ -1,14 +1,15 @@
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { MouseEvent, useMemo, useEffect, useRef, useState } from 'react';
+import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Controls from '../components/Controls';
 import ExtraControls from '../components/ExtraControls';
 import Logo from '../components/Logo';
-import { tools, ToolState } from '../helper/tools';
+import { isShape, Shape, tools, ToolState } from '../helper/tools';
 
 const Home: NextPage = () => {
   const [activeTool, setTool] = useState<ToolState>();
   const [drawing, setDrawing] = useState(false);
+  const [elements, setElements] = useState<Shape[]>([]);
 
   const action = useMemo(() => {
     return tools.find((tool) => tool.title === activeTool)?.action;
@@ -16,40 +17,82 @@ const Home: NextPage = () => {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const [special, setSpecial] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.style.width = `${canvas.clientWidth}px`;
-    canvas.style.height = `${canvas.clientHeight}px`;
-    canvas.width = canvas.clientWidth * 2;
-    canvas.height = canvas.clientHeight * 2;
+    const container = canvas?.parentElement;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !container || !ctx) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(2, 2);
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    canvas.style.width = `${container.clientWidth}px`;
+    canvas.style.height = '100vh';
+
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 5;
-    ctxRef.current = canvas.getContext('2d');
+    ctx.lineCap = 'round';
+    ctxRef.current = ctx;
+
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Shift') {
+        setSpecial(true);
+      }
+    });
+    window.addEventListener('keyup', (event) => {
+      if (event.key === 'Shift') {
+        setSpecial(false);
+      }
+    });
   }, []);
 
-  const start = (event: MouseEvent<HTMLCanvasElement>) => {
-    const { offsetX, offsetY } = event.nativeEvent;
-    if (!ctxRef.current || !action) return;
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-    action.start(ctxRef.current, offsetX, offsetY);
+    elements.forEach((el) => {
+      el.render(ctx);
+    });
+  }, [elements]);
+
+  const start = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (!action) return;
+    const { offsetX, offsetY } = event.nativeEvent;
+
+    const element = action({
+      x1: offsetX,
+      y1: offsetY,
+      x2: offsetX,
+      y2: offsetY,
+    });
+    if (isShape(element)) {
+      element.specialRender = special;
+      setElements([...elements, element]);
+    }
     setDrawing(true);
   };
   const draw = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (!drawing || !action) return;
     const { offsetX, offsetY } = event.nativeEvent;
-    if (!ctxRef.current || !action || !drawing) return;
 
-    action.draw(ctxRef.current, offsetX, offsetY);
+    const idx = elements.length - 1;
+    const { x1, y1 } = elements[idx];
+    const element = action({
+      x1,
+      y1,
+      x2: offsetX,
+      y2: offsetY,
+    });
+    if (isShape(element)) {
+      element.specialRender = special;
+      const newElements = [...elements];
+      newElements[idx] = element;
+      setElements(newElements);
+    }
   };
-  const end = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (!ctxRef.current || !action) return;
-
-    action.end(ctxRef.current);
+  const end = () => {
     setDrawing(false);
   };
 
@@ -61,24 +104,36 @@ const Home: NextPage = () => {
         <link rel='icon' href='/favicon.ico' />
       </Head>
       <main className='flex min-h-screen transition-colors duration-500 dark:bg-zinc-900'>
-        <aside className='flex flex-col items-center gap-4 p-2 py-4 shadow-lg shadow-black/50 dark:bg-zinc-800/75 dark:shadow-transparent'>
+        <aside className='flex min-w-max  flex-col items-center gap-4 p-2 py-4 shadow-lg shadow-black/50 dark:bg-zinc-800/75 dark:shadow-transparent'>
           <a href='https://github.com/volodymyr-havryliuk165' target='blank'>
             <Logo className=' hover:text-rose-600' />
           </a>
           <Controls tool={activeTool} setter={setTool} />
         </aside>
-        <div className='flex grow'>
+        <div className='flex grow overflow-x-auto'>
           <canvas
             ref={canvasRef}
             onMouseDown={start}
             onMouseMove={draw}
             onMouseUp={end}
+            className='cursor-crosshair'
           />
         </div>
-        <aside>
-          <ExtraControls />
+        <aside className='min-w-max dark:bg-zinc-800/75'>
+          <ExtraControls
+            clear={() => {
+              ctxRef.current?.clearRect(
+                0,
+                0,
+                ctxRef.current.canvas.width,
+                ctxRef.current.canvas.height
+              );
+              setElements([]);
+            }}
+          />
         </aside>
       </main>
+      {/* <div className='hidden -rotate-45 -scale-x-100 text-[1.75rem] leading-7'></div> */}
     </div>
   );
 };
