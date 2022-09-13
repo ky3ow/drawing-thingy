@@ -1,23 +1,46 @@
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import Controls from '../components/Controls';
 import ExtraControls from '../components/ExtraControls';
 import Logo from '../components/Logo';
-import { isShape, Shape, tools, ToolState } from '../helper/tools';
+import { Shape, tools, ToolState } from '../helper/tools';
+const getElementAtPosition = (x: number, y: number, elements: Shape[]) => {
+  return elements
+    .filter((element) => element.checkIntersection(x, y) === true)
+    .pop();
+};
+const getElementById = (id: string, elements: Shape[]) => {
+  return elements.find((e) => e.id === id);
+};
+const updateElement = (element: Shape, elements: Shape[]) => {
+  return [...elements].map((e) => {
+    if (e.id === element?.id) {
+      return element;
+    }
+    return e;
+  });
+};
 
 const Home: NextPage = () => {
   const [activeTool, setTool] = useState<ToolState>();
-  const [drawing, setDrawing] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'drawing' | 'moving'>('idle');
   const [elements, setElements] = useState<Shape[]>([]);
-
-  const action = useMemo(() => {
-    return tools.find((tool) => tool.title === activeTool)?.action;
+  const [selectedElement, setSelected] = useState<Shape>();
+  const tool = useMemo(() => {
+    return tools.find((tool) => tool.title === activeTool);
   }, [activeTool]);
 
+  const [special, setSpecial] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const [special, setSpecial] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,42 +81,53 @@ const Home: NextPage = () => {
   }, [elements]);
 
   const start = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (!action) return;
+    if (!tool) return;
+    const { type } = tool;
     const { offsetX, offsetY } = event.nativeEvent;
-
-    const element = action({
-      x1: offsetX,
-      y1: offsetY,
-      x2: offsetX,
-      y2: offsetY,
-    });
-    if (isShape(element)) {
-      element.specialRender = special;
-      setElements([...elements, element]);
+    switch (type) {
+      case 'shape': {
+        const element = tool.generateShape(offsetX, offsetY);
+        setElements([...elements, element]);
+        setStatus('drawing');
+        break;
+      }
+      case 'selection': {
+        const element = getElementAtPosition(offsetX, offsetY, elements);
+        if (element) {
+          setStatus('moving');
+          element.setOffset(offsetX, offsetY);
+          setSelected(element);
+        }
+        break;
+      }
     }
-    setDrawing(true);
   };
   const draw = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (!drawing || !action) return;
-    const { offsetX, offsetY } = event.nativeEvent;
+    if (status === 'idle' || !tool) return;
+    const { type } = tool;
+    const { offsetX: x, offsetY: y } = event.nativeEvent;
 
-    const idx = elements.length - 1;
-    const { x1, y1 } = elements[idx];
-    const element = action({
-      x1,
-      y1,
-      x2: offsetX,
-      y2: offsetY,
-    });
-    if (isShape(element)) {
-      element.specialRender = special;
-      const newElements = [...elements];
-      newElements[idx] = element;
-      setElements(newElements);
+    switch (type) {
+      case 'shape': {
+        const element = elements[elements.length - 1];
+        element.specialRender = special;
+        element.transform(x, y);
+        setElements(updateElement(element, elements));
+        break;
+      }
+      case 'selection': {
+        if (!selectedElement) return;
+        const element = getElementById(selectedElement.id, elements);
+        if (!element) return;
+        element.move(x, y);
+        setElements(updateElement(element, elements));
+        break;
+      }
     }
   };
   const end = () => {
-    setDrawing(false);
+    setStatus('idle');
+    setSelected(undefined);
   };
 
   return (
@@ -116,6 +150,9 @@ const Home: NextPage = () => {
             onMouseDown={start}
             onMouseMove={draw}
             onMouseUp={end}
+            style={{
+              cursor: tool?.type === 'selection' ? 'default' : 'crosshair',
+            }}
             className='cursor-crosshair'
           />
         </div>
@@ -133,7 +170,6 @@ const Home: NextPage = () => {
           />
         </aside>
       </main>
-      {/* <div className='hidden -rotate-45 -scale-x-100 text-[1.75rem] leading-7'></div> */}
     </div>
   );
 };
