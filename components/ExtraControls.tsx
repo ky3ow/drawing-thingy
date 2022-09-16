@@ -1,8 +1,17 @@
-import React, { RefObject } from 'react';
-import { Shape } from '../helper/tools';
+import { Shape, Styles } from '../helper/tools';
 import ButtonBase from './base/ButtonBase';
 
-const ExtraControls = ({ clear }: { clear: () => void }) => {
+const ExtraControls = ({
+  clear,
+  styles,
+  setStyles,
+  update,
+}: {
+  clear: () => void;
+  styles: Styles;
+  setStyles: (styles: Styles) => void;
+  update: (styles: Styles) => void;
+}) => {
   return (
     <>
       <ButtonBase
@@ -11,6 +20,28 @@ const ExtraControls = ({ clear }: { clear: () => void }) => {
         }}
       >
         Delete
+      </ButtonBase>
+      <ButtonBase
+        onClick={() => {
+          const newStyles = {
+            ...styles,
+            strokeStyle: 'red',
+          };
+          update(newStyles);
+        }}
+      >
+        Styles1
+      </ButtonBase>
+      <ButtonBase
+        onClick={() => {
+          const newStyles = {
+            ...styles,
+            strokeStyle: '#fff',
+          };
+          update(newStyles);
+        }}
+      >
+        Styles2
       </ButtonBase>
     </>
   );

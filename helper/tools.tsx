@@ -5,6 +5,7 @@ import { HiArrowNarrowLeft } from 'react-icons/hi';
 import { AiOutlineLine } from 'react-icons/ai';
 import { sizes } from '../components/base/ButtonBase';
 import nextId from 'react-id-generator';
+import { drawArrowHead, drawLine, drawRect } from './geometry';
 
 type ToolControlProps = {
   tool: ToolState;
@@ -22,21 +23,44 @@ type ToolState =
   | 'eraser'
   | 'text';
 
+type Vector = {
+  x: number;
+  y: number;
+};
+type Point = {
+  x: number;
+  y: number;
+};
 type Coords = {
-  x1: number;
-  x2: number;
-  y1: number;
-  y2: number;
+  x0: number;
+  x: number;
+  y0: number;
+  y: number;
+};
+
+type Styles = {
+  strokeStyle: string;
+  fillStyle: string;
+  width: number;
+  lineCap: CanvasLineCap;
 };
 
 type Shape = {
-  id: string;
-  render: (context: CanvasRenderingContext2D, special?: boolean) => void;
-  move: (x: number, y: number) => void;
-  transform: (x: number, y: number) => void;
-  checkIntersection: (x: number, y: number) => boolean;
-  cursorOffset: { x: number; y: number };
-  setOffset: (x: number, y: number) => void;
+  readonly id: string;
+  context: CanvasRenderingContext2D;
+  render: (special?: boolean) => void;
+  move: (point: Point) => void;
+  checkIntersection: (point: Point) => boolean;
+  transform: (point: Point) => void;
+  getNormalCoords: () => Coords;
+  normalize: () => void;
+  cursorOffset: Vector;
+  setOffset: (point: Point) => void;
+  styles: Styles;
+  setStyles: (styles: Styles) => void;
+  applyStyles: () => void;
+  selected: boolean;
+  drawBoundingRect: () => void;
   specialRender?: boolean;
 } & Coords;
 
@@ -49,7 +73,11 @@ interface Tool {
 
 interface ShapeTool extends Tool {
   type: 'shape';
-  generateShape: (x: number, y: number) => Shape;
+  generateShape: (
+    point: Point,
+    context: CanvasRenderingContext2D,
+    styles: Styles
+  ) => Shape;
 }
 
 interface UtilTool extends Tool {
@@ -59,58 +87,91 @@ interface UtilTool extends Tool {
 
 interface MoveTool extends Tool {
   type: 'selection';
+  selected: Shape | undefined;
+  selectOffset: Vector;
+  selectElementAtPosition: (point: Point) => Shape | undefined;
+  setElements: (elements: Shape[]) => void;
+  setOffset: (point: Point) => void;
+  move: (point: Point) => void;
 }
 
-const getSnapCoords = ({ x1, x2, y1, y2 }: Coords) => {
-  return Math.abs(x2 - x1) > Math.abs(y2 - y1)
-    ? { x: x2, y: y1 }
-    : { x: x1, y: y2 };
+const getSnapCoords = ({ x0, x, y0, y }: Coords) => {
+  return Math.abs(x - x0) > Math.abs(y - y0)
+    ? { x: x, y: y0 }
+    : { x: x0, y: y };
 };
 
-const renderLine = (
-  { x1, x2, y1, y2 }: Coords,
+const generateDefaultShape = (
+  { x, y }: Point,
   context: CanvasRenderingContext2D,
-  specialRender?: boolean
-) => {
-  const coords = specialRender
-    ? getSnapCoords({ x1, x2, y1, y2 })
-    : { x: x2, y: y2 };
-  context.beginPath();
-  context.moveTo(x1, y1);
-  const { x, y } = coords;
-  context.lineTo(x, y);
-  context.stroke();
-  context.closePath();
-};
-
-const generateDefaultShape = (x: number, y: number): Shape => {
+  styles: Styles
+): Shape => {
   return {
     id: nextId(),
-    x1: x,
-    x2: x,
-    y1: y,
-    y2: y,
+    x0: x,
+    x,
+    y0: y,
+    y,
+    selected: false,
+    context,
+    styles,
+    getNormalCoords() {
+      const x0 = Math.min(this.x0, this.x);
+      const x = Math.max(this.x0, this.x);
+      const y0 = Math.min(this.y0, this.y);
+      const y = Math.max(this.y0, this.y);
+      return { x0, x, y0, y };
+    },
+    normalize() {
+      // DO NOT CALL INSIDE OTHER METHODS
+      const { x0, x, y0, y } = this.getNormalCoords();
+      this.x0 = x0;
+      this.x = x;
+      this.y0 = y0;
+      this.y = y;
+    },
+    applyStyles() {
+      const context = this.context;
+      const { fillStyle, lineCap, strokeStyle, width } = this.styles;
+      context.strokeStyle = strokeStyle;
+      context.fillStyle = strokeStyle;
+      context.lineWidth = width;
+      context.lineCap = lineCap;
+    },
+    setStyles(styles) {
+      this.styles = styles;
+    },
     cursorOffset: { x: 0, y: 0 },
-    render(context) {
+    setOffset({ x, y }) {
+      this.cursorOffset = { x: x - this.x0, y: y - this.y0 };
+    },
+    render() {
       throw new Error('render not implemented');
     },
-    move(x, y) {
-      const width = this.x2 - this.x1;
-      const height = this.y2 - this.y1;
-      this.x1 = x - this.cursorOffset?.x;
-      this.y1 = y - this.cursorOffset?.y;
-      this.x2 = this.x1 + width;
-      this.y2 = this.y1 + height;
+    move({ x, y }) {
+      throw new Error('moving not implemented');
     },
-    transform(x, y) {
-      this.x2 = x;
-      this.y2 = y;
+    transform({ x, y }) {
+      this.x = x;
+      this.y = y;
     },
-    checkIntersection(x, y) {
+    checkIntersection({ x, y }) {
       throw new Error('intersection not implemented');
     },
-    setOffset(x, y) {
-      this.cursorOffset = { x: x - this.x1, y: y - this.y1 };
+    drawBoundingRect() {
+      const width = this.x - this.x0;
+      const height = this.y - this.y0;
+      if (this.selected) {
+        const ctx = this.context;
+        const styles = this.styles;
+        ctx.setLineDash([18]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = defaultStyles.strokeStyle;
+        ctx.strokeRect(this.x0 - 10, this.y0 - 10, width + 20, height + 20);
+        ctx.setLineDash([1]);
+        ctx.lineWidth = styles.width;
+        ctx.strokeStyle = styles.strokeStyle;
+      }
     },
   };
 };
@@ -143,24 +204,36 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'rectangle',
     icon: <BiRectangle size={sizes.md} title='rectangle' />,
     hotkey: 'r',
-    generateShape: (x, y) => {
-      const defaultProps = generateDefaultShape(x, y);
+    generateShape: ({ x, y }, context, styles) => {
+      const defaultProps = generateDefaultShape({ x, y }, context, styles);
       return {
         ...defaultProps,
-        render(context) {
-          const width = this.x2 - this.x1;
-          let height = this.y2 - this.y1;
+        render() {
+          this.applyStyles();
+          this.drawBoundingRect();
           if (this.specialRender) {
-            height = height > 0 ? Math.abs(width) : -Math.abs(width);
+            const height = this.y - this.y0;
+            this.y =
+              height > 0
+                ? this.y0 + Math.abs(this.x - this.x0)
+                : this.y0 - Math.abs(this.x - this.x0);
           }
-          context.strokeRect(this.x1, this.y1, width, height);
+          const { x0, x, y0, y } = this.getNormalCoords();
+          // 2 : 4 : 12 // 0.5 0.25 0.08 0
+          const r = Math.min(x - x0, y - y0) * 0;
+          drawRect({ x0, x, y0, y }, this.context, r);
         },
-        checkIntersection(x, y) {
-          const minX = Math.min(this.x1, this.x2);
-          const maxX = Math.max(this.x1, this.x2);
-          const minY = Math.min(this.y1, this.y2);
-          const maxY = Math.max(this.y1, this.y2);
-          return x >= minX && x <= maxX && y >= minY && y <= maxY;
+        move({ x, y }) {
+          const width = this.x - this.x0;
+          const height = this.y - this.y0;
+          this.x0 = x - this.cursorOffset?.x;
+          this.y0 = y - this.cursorOffset?.y;
+          this.x = this.x0 + width;
+          this.y = this.y0 + height;
+        },
+        checkIntersection({ x: _x, y: _y }) {
+          const { x0, x, y0, y } = this.getNormalCoords();
+          return _x >= x0 && _x <= x && _y >= y0 && _y <= y;
         },
       };
     },
@@ -170,26 +243,33 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'circle',
     icon: <BiCircle size={sizes.md} title='circle' />,
     hotkey: 'c',
-    generateShape: (x, y) => {
-      const defaultProps = generateDefaultShape(x, y);
+    generateShape: ({ x, y }, context, styles) => {
+      const defaultProps = generateDefaultShape({ x, y }, context, styles);
       return {
         ...defaultProps,
-        render(context) {
-          context.beginPath();
-          const rx = Math.abs(this.x1 - this.x2) / 2;
-          const ry = !this.specialRender ? Math.abs(this.y1 - this.y2) / 2 : rx;
-          const x = this.x1 > this.x2 ? this.x1 - rx : this.x1 + rx;
-          const y = this.y1 > this.y2 ? this.y1 - ry : this.y1 + ry;
-          context.ellipse(x, y, rx, ry, 0, 0, 2 * Math.PI);
-          context.stroke();
-          context.closePath();
+        render() {
+          this.applyStyles();
+          this.drawBoundingRect();
+          this.context.beginPath();
+          const rx = Math.abs(this.x0 - this.x) / 2;
+          const ry = !this.specialRender ? Math.abs(this.y0 - this.y) / 2 : rx;
+          const x = this.x0 > this.x ? this.x0 - rx : this.x0 + rx;
+          const y = this.y0 > this.y ? this.y0 - ry : this.y0 + ry;
+          this.context.ellipse(x, y, rx, ry, 0, 0, 2 * Math.PI);
+          this.context.stroke();
+          this.context.closePath();
         },
-        checkIntersection(x, y) {
-          const minX = Math.min(this.x1, this.x2);
-          const maxX = Math.max(this.x1, this.x2);
-          const minY = Math.min(this.y1, this.y2);
-          const maxY = Math.max(this.y1, this.y2);
-          return x >= minX && x <= maxX && y >= minY && y <= maxY;
+        move({ x, y }) {
+          const width = this.x - this.x0;
+          const height = this.y - this.y0;
+          this.x0 = x - this.cursorOffset?.x;
+          this.y0 = y - this.cursorOffset?.y;
+          this.x = this.x0 + width;
+          this.y = this.y0 + height;
+        },
+        checkIntersection({ x: _x, y: _y }) {
+          const { x0, x, y0, y } = this.getNormalCoords();
+          return _x >= x0 && _x <= x && _y >= y0 && _y <= y;
         },
       };
     },
@@ -201,64 +281,27 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
       <HiArrowNarrowLeft size={sizes.md} title='Arrow' className='-rotate-45' />
     ),
     hotkey: 'a',
-    generateShape: (x, y) => {
-      const defaultProps = generateDefaultShape(x, y);
+    generateShape: ({ x, y }, context, styles) => {
+      const defaultProps = generateDefaultShape({ x, y }, context, styles);
       return {
         ...defaultProps,
-        render(context) {
-          const coords = this.specialRender
-            ? getSnapCoords({
-                x1: this.x1,
-                x2: this.x2,
-                y1: this.y1,
-                y2: this.y2,
-              })
-            : { x: this.x2, y: this.y2 };
-          context.beginPath();
-          context.moveTo(this.x1, this.y1);
-          const { x, y } = coords;
-          context.lineTo(x, y);
-          context.stroke();
+        render() {
+          this.applyStyles();
+          const { x, y } = this.specialRender
+            ? getSnapCoords({ x0: this.x0, x: this.x, y0: this.y0, y: this.y })
+            : { x: this.x, y: this.y };
+          const [x0, y0] = [this.x0, this.y0];
+          drawLine({ x0, x, y0, y }, this.context);
 
-          // headLen - distance between two points by formula * so  me ratio
+          // headLen - distance between two points by formula * some ratio
           const headLen = Math.min(
-            Math.sqrt((x - this.x1) ** 2 + (y - this.y1) ** 2) * 1,
+            Math.sqrt((x - x0) ** 2 + (y - y0) ** 2) * 1,
             50
           );
-          const angle = Math.atan2(y - this.y1, x - this.x1);
-
-          context.beginPath();
-          /*
-           * (half of arrow head explained)
-           *  xa - x arrowhead, ya - y             ____________
-           *  c - arrowhead length                / |\  alpha
-           *                                    / l|r\
-           *                                  /   |  \
-           *            b                   /    |    \
-           *   ________________(x,y)       /    |      \
-           *      |       t  /            /    |        \
-           *      |        /                  |
-           *      |      /                   |
-           *    a |    /  c           alpha |
-           *      |  /               ______|
-           *      |/                    alpha - line angle
-           *    (xa, ya)                lArrowhead = alpha + l
-           *                            rArrowHead = alpha - r
-           *
-           *    xa = b       cos t = b / c ====> b = c * cos t
-           *    ya = a       sin t = a / c ====> a = c * sin t
-           */
-          context.moveTo(
-            x - headLen * Math.cos(angle - Math.PI / 6),
-            y - headLen * Math.sin(angle - Math.PI / 6)
-          );
-          context.lineTo(x, y);
-          context.lineTo(
-            x - headLen * Math.cos(angle + Math.PI / 6),
-            y - headLen * Math.sin(angle + Math.PI / 6)
-          );
-          context.stroke();
-          context.closePath();
+          drawArrowHead({ x0, x, y0, y }, this.context, headLen, Math.PI / 6);
+        },
+        normalize() {
+          return;
         },
       };
     },
@@ -268,16 +311,20 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'line',
     icon: <AiOutlineLine size={sizes.md} title='Line' className='-rotate-45' />,
     hotkey: 'l',
-    generateShape: (x, y) => {
-      const defaultProps = generateDefaultShape(x, y);
+    generateShape: ({ x, y }, context, styles) => {
+      const defaultProps = generateDefaultShape({ x, y }, context, styles);
       return {
         ...defaultProps,
-        render(context) {
-          renderLine(
-            { x1: this.x1, x2: this.x2, y1: this.y1, y2: this.y2 },
-            context,
-            this.specialRender
-          );
+        render() {
+          this.applyStyles();
+          const { x, y } = this.specialRender
+            ? getSnapCoords({ x0: this.x0, x: this.x, y0: this.y0, y: this.y })
+            : { x: this.x, y: this.y };
+          const [x0, y0] = [this.x0, this.y0];
+          drawLine({ x0, x, y0, y }, this.context);
+        },
+        normalize() {
+          return;
         },
       };
     },
@@ -298,5 +345,12 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
   },
 ];
 
-export type { Tool, ToolState, ToolControlProps, Shape };
-export { tools };
+const defaultStyles: Styles = {
+  strokeStyle: '#fff',
+  fillStyle: 'transparent',
+  width: 5,
+  lineCap: 'round',
+};
+
+export type { Tool, ToolState, ToolControlProps, Shape, Styles, Coords };
+export { tools, defaultStyles };
