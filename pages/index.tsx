@@ -1,43 +1,89 @@
 import type { NextPage } from 'next';
 import Head from 'next/head';
-import {
-  MouseEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Controls from '../components/Controls';
 import ExtraControls from '../components/ExtraControls';
 import Logo from '../components/Logo';
-import { Shape, tools, ToolState } from '../helper/tools';
-const getElementAtPosition = (x: number, y: number, elements: Shape[]) => {
-  return elements
-    .filter((element) => element.checkIntersection(x, y) === true)
-    .pop();
-};
-const getElementById = (id: string, elements: Shape[]) => {
-  return elements.find((e) => e.id === id);
-};
-const updateElement = (element: Shape, elements: Shape[]) => {
-  return [...elements].map((e) => {
-    if (e.id === element?.id) {
-      return element;
-    }
-    return e;
-  });
+import {
+  defaultStyles,
+  Shape,
+  Styles,
+  tools,
+  ToolState,
+} from '../helper/tools';
+
+const useElements = (initialState: Shape[]) => {
+  const [elements, setElements] = useState(initialState);
+
+  const getElementById = (id: string | undefined) => {
+    if (id === undefined) return null;
+    return elements.find((e) => e.id === id);
+  };
+  const getElementAtPosition = (x: number, y: number) => {
+    return elements
+      .filter((element) => element.checkIntersection({ x, y }) === true)
+      .pop();
+  };
+  const getCurrentElement = () => {
+    return elements[elements.length - 1];
+  };
+  // get element, copy it, make changes to it, then invoke update
+  const updateElements = (elementToUpdate: Shape) => {
+    setElements(
+      elements.map((e) => {
+        if (e.id === elementToUpdate?.id) {
+          return elementToUpdate;
+        }
+        return e;
+      })
+    );
+  };
+
+  const [selectedElement, _setSelected] = useState<Shape>();
+
+  const getSelected = () => {
+    return getElementById(selectedElement?.id);
+  };
+  const setSelected = (element: Shape | undefined) => {
+    setElements((el) => {
+      return el.map((e) => {
+        if (e.id === element?.id) {
+          return { ...e, selected: true };
+        }
+        return { ...e, selected: false };
+      });
+    });
+    _setSelected(element);
+  };
+
+  return {
+    elements,
+    getElementAtPosition,
+    getCurrentElement,
+    setElements,
+    updateElements,
+    getSelected,
+    setSelected,
+  };
 };
 
 const Home: NextPage = () => {
   const [activeTool, setTool] = useState<ToolState>();
   const [status, setStatus] = useState<'idle' | 'drawing' | 'moving'>('idle');
-  const [elements, setElements] = useState<Shape[]>([]);
-  const [selectedElement, setSelected] = useState<Shape>();
+  const {
+    elements,
+    getElementAtPosition,
+    getCurrentElement,
+    setElements,
+    updateElements,
+    getSelected,
+    setSelected,
+  } = useElements([]);
   const tool = useMemo(() => {
     return tools.find((tool) => tool.title === activeTool);
   }, [activeTool]);
 
+  const [styles, setStyles] = useState<Styles>(defaultStyles);
   const [special, setSpecial] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -52,10 +98,6 @@ const Home: NextPage = () => {
     canvas.height = container.clientHeight;
     canvas.style.width = `${container.clientWidth}px`;
     canvas.style.height = '100vh';
-
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 5;
-    ctx.lineCap = 'round';
     ctxRef.current = ctx;
 
     window.addEventListener('keydown', (event) => {
@@ -71,63 +113,84 @@ const Home: NextPage = () => {
   }, []);
 
   useEffect(() => {
-    const ctx = ctxRef.current;
-    if (!ctx) return;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-
+    ctxRef.current?.clearRect(
+      0,
+      0,
+      ctxRef.current.canvas.width,
+      ctxRef.current.canvas.height
+    );
     elements.forEach((el) => {
-      el.render(ctx);
+      el.render();
     });
   }, [elements]);
 
+  const setCursorStyle = (x: number, y: number) => {
+    if (!canvasRef.current) return;
+    if (tool?.title === 'cursor') {
+      canvasRef.current.style.cursor = getElementAtPosition(x, y)
+        ? 'move'
+        : 'default';
+    } else {
+      canvasRef.current.style.cursor = 'crosshair';
+    }
+  };
+
   const start = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (!tool) return;
+    if (!tool || !ctxRef.current) return;
     const { type } = tool;
-    const { offsetX, offsetY } = event.nativeEvent;
+    const { offsetX: x, offsetY: y } = event.nativeEvent;
     switch (type) {
       case 'shape': {
-        const element = tool.generateShape(offsetX, offsetY);
+        const element = tool.generateShape({ x, y }, ctxRef.current, styles);
         setElements([...elements, element]);
         setStatus('drawing');
         break;
       }
       case 'selection': {
-        const element = getElementAtPosition(offsetX, offsetY, elements);
+        const element = getElementAtPosition(x, y);
         if (element) {
           setStatus('moving');
-          element.setOffset(offsetX, offsetY);
+          element.setOffset({ x, y });
+          updateElements(element);
           setSelected(element);
+        } else {
+          setSelected(undefined);
         }
         break;
       }
     }
   };
   const draw = (event: MouseEvent<HTMLCanvasElement>) => {
+    const { offsetX: x, offsetY: y } = event.nativeEvent;
+    setCursorStyle(x, y);
     if (status === 'idle' || !tool) return;
     const { type } = tool;
-    const { offsetX: x, offsetY: y } = event.nativeEvent;
 
     switch (type) {
       case 'shape': {
-        const element = elements[elements.length - 1];
+        const element = getCurrentElement();
         element.specialRender = special;
-        element.transform(x, y);
-        setElements(updateElement(element, elements));
+        element.transform({ x, y });
+        updateElements(element);
         break;
       }
       case 'selection': {
-        if (!selectedElement) return;
-        const element = getElementById(selectedElement.id, elements);
+        const element = getSelected();
         if (!element) return;
-        element.move(x, y);
-        setElements(updateElement(element, elements));
+        element.move({ x, y });
+        updateElements(element);
         break;
       }
     }
   };
   const end = () => {
+    if (tool?.type === 'shape') {
+      const element = getCurrentElement();
+      element.normalize();
+      setSelected(element);
+    }
+    // setTool('cursor');
     setStatus('idle');
-    setSelected(undefined);
   };
 
   return (
@@ -150,10 +213,6 @@ const Home: NextPage = () => {
             onMouseDown={start}
             onMouseMove={draw}
             onMouseUp={end}
-            style={{
-              cursor: tool?.type === 'selection' ? 'default' : 'crosshair',
-            }}
-            className='cursor-crosshair'
           />
         </div>
         <aside className='min-w-max dark:bg-zinc-800/75'>
@@ -166,6 +225,14 @@ const Home: NextPage = () => {
                 ctxRef.current.canvas.height
               );
               setElements([]);
+            }}
+            styles={styles}
+            setStyles={setStyles}
+            update={(newStyles) => {
+              const element = getSelected();
+              if (!element) return;
+              element.setStyles(newStyles);
+              updateElements(element);
             }}
           />
         </aside>
