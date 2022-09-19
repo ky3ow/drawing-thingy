@@ -1,78 +1,113 @@
-import { Coords } from './tools';
+import { Coordinates, Point } from './tools';
 
 type DrawFunc<TParams extends any[] = []> = (
-  { x0, x, y0, y }: Coords,
+  coordinates: Coordinates,
   context: CanvasRenderingContext2D,
   ...aditional: TParams
 ) => void;
 
 // draws rectangle, can define radius for rounded angles
-const drawRect: DrawFunc<[radius: number]> = (
-  { x0, x, y0, y },
+const drawRect: DrawFunc<[rounded?: number]> = (
+  { start, end },
   context,
-  radius = 0
+  rounded = 0
 ) => {
+  if (rounded > 0.5) rounded = 0.5;
+  const radius = Math.min(end.x - start.x, end.y - start.y) * rounded;
   context.beginPath();
-  context.moveTo(x0, y0 + radius);
-  context.quadraticCurveTo(x0, y0, x0 + radius, y0);
-  context.lineTo(x - radius, y0);
-  context.quadraticCurveTo(x, y0, x, y0 + radius);
-  context.lineTo(x, y - radius);
-  context.quadraticCurveTo(x, y, x - radius, y);
-  context.lineTo(x0 + radius, y);
-  context.quadraticCurveTo(x0, y, x0, y - radius);
+  context.moveTo(start.x, start.y + radius);
+  context.quadraticCurveTo(start.x, start.y, start.x + radius, start.y);
+  context.lineTo(end.x - radius, start.y);
+  context.quadraticCurveTo(end.x, start.y, end.x, start.y + radius);
+  context.lineTo(end.x, end.y - radius);
+  context.quadraticCurveTo(end.x, end.y, end.x - radius, end.y);
+  context.lineTo(start.x + radius, end.y);
+  context.quadraticCurveTo(start.x, end.y, start.x, end.y - radius);
   context.closePath();
   context.stroke();
+};
+
+const getSnapPoint = ({ start, end }: Coordinates): Point => {
+  return Math.abs(end.x - start.x) > Math.abs(end.y - start.y)
+    ? { x: end.x, y: start.y }
+    : { x: start.x, y: end.y };
+};
+
+const getDistance = (start: Point, end: Point) => {
+  return Math.sqrt(Math.pow(start.x - end.x, 2) + Math.pow(start.y - end.y, 2));
 };
 
 // draws simple line
-const drawLine: DrawFunc = ({ x0, x, y0, y }, context) => {
+const drawLine: DrawFunc = ({ start, end }, context) => {
   context.beginPath();
-  context.moveTo(x0, y0);
-  context.lineTo(x, y);
+  context.moveTo(start.x, start.y);
+  context.lineTo(end.x, end.y);
   context.stroke();
   context.closePath();
 };
 
+// arrowAngle - radians
 const drawArrowHead: DrawFunc<[headlen: number, angle: number]> = (
-  { x0, x, y0, y },
+  { start, end },
   context,
   headLen,
   arrowAngle
 ) => {
-  const axisAngle = Math.atan2(y - y0, x - x0);
+  const axisAngle = Math.atan2(end.y - start.y, end.x - start.x);
   context.beginPath();
   /*
-   * (half of arrow head explained)
-   *  xa - x arrowhead, ya - y             ____________
-   *  c - arrowhead length                / |\  alpha
-   *                                    / l|r\
-   *                                  /   |  \
-   *            b                   /    |    \
-   *   ________________(x,y)       /    |      \
-   *      |       t  /            /    |        \
-   *      |        /                  |
-   *      |      /                   |
-   *    a |    /  c           alpha |
-   *      |  /               ______|
-   *      |/                    alpha - line angle
-   *    (xa, ya)                lArrowhead = alpha + l
-   *                            rArrowHead = alpha - r
-   *
-   *    xa = b       cos t = b / c ====> b = c * cos t
-   *    ya = a       sin t = a / c ====> a = c * sin t
+                                -90                               
+                                  ^
+                                  |                    /  T
+                                                      /
+                                                      
+                      <II>                          /                 <I>
+                                     
+                                      L'          /H           R'            S
+                                  |--- -- -- -- -/()\-- -- -- -- -- -- -- -- 
+                                                / |   \
+                                               /  |    \
+                                              /   |      \
+                                             / a  |    b  \                  <I, II, III, IV> - sections
+                                            /    |         \                 k - slope angle; height / width of line 
+                                           /    |           \                
+                                          /    |             \               <k = <THS (corresponding angles with 
+                                         /    |               \              paralel lines and transversal PH) 
+                                       ()     |               ()             a, b - angles from Line to respective arrow
+                                       L     |                    R          HL - left arrow head, <SHL angle from end.x axis
+                                            |                                HR - left arrow head, <SHR angle from end.x axis
+                                           |                                 k + 180 ==> get opposite angle from slope 
+                                          |                                  << e.g. k = -60deg(I section) 
+                                         |                                   k + 180 = 120deg(III section)  
+          -179                          |                                    line that goes from top to bottom >>
+                                        |                                    <SHL = k + 180 + a
+                                       | k                                   << e.g. -60+180+40 = 160deg  >>
+      180 <----------------------------()--------------------------------> 0 <SHR = k + 180 - b        
+          179                          P                                     << e.g. -60+180-40 = 80 >>
+                                  
+                                                                             |>LHL': 
+                                                                             <LHL' in triangle <=> <SHL on axis
+                                                                             Lx, Ly - ?
+                                                                             Lx = L'H  Ly = LL' LH = prefered arrow size
+                                                                             sin <LHL' = LL' / LH = Ly / LH => Ly = sin<LHL' * LH  
+                                                                             cos <LHL' = L'H / LH = Lx / LH => Lx = cos<LHL' * LH 
+                                                                             Same for |>RHR'
+                    <III>                                      <IV>
+                                  |
+                                  v
+                                  90
    */
   context.moveTo(
-    x - headLen * Math.cos(axisAngle - arrowAngle),
-    y - headLen * Math.sin(axisAngle - arrowAngle)
+    end.x + headLen * Math.cos(axisAngle - arrowAngle + Math.PI),
+    end.y + headLen * Math.sin(axisAngle - arrowAngle + Math.PI)
   );
-  context.lineTo(x, y);
+  context.lineTo(end.x, end.y);
   context.lineTo(
-    x - headLen * Math.cos(axisAngle + arrowAngle),
-    y - headLen * Math.sin(axisAngle + arrowAngle)
+    end.x + headLen * Math.cos(axisAngle + arrowAngle + Math.PI),
+    end.y + headLen * Math.sin(axisAngle + arrowAngle + Math.PI)
   );
   context.stroke();
   context.closePath();
 };
 
-export { drawRect, drawLine, drawArrowHead };
+export { drawRect, drawLine, drawArrowHead, getSnapPoint, getDistance };

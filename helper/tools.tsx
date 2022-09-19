@@ -5,7 +5,13 @@ import { HiArrowNarrowLeft } from 'react-icons/hi';
 import { AiOutlineLine } from 'react-icons/ai';
 import { sizes } from '../components/base/ButtonBase';
 import nextId from 'react-id-generator';
-import { drawArrowHead, drawLine, drawRect } from './geometry';
+import {
+  drawArrowHead,
+  drawLine,
+  drawRect,
+  getDistance,
+  getSnapPoint,
+} from './geometry';
 
 type ToolControlProps = {
   tool: ToolState;
@@ -27,15 +33,15 @@ type Vector = {
   x: number;
   y: number;
 };
+
 type Point = {
   x: number;
   y: number;
 };
-type Coords = {
-  x0: number;
-  x: number;
-  y0: number;
-  y: number;
+
+type Coordinates = {
+  start: Point;
+  end: Point;
 };
 
 type Styles = {
@@ -45,6 +51,19 @@ type Styles = {
   lineCap: CanvasLineCap;
 };
 
+type Stylable = {
+  styles: Styles;
+  applyStyles: () => void;
+  setStyles: (styles: Styles) => void;
+};
+
+type Selectable = {
+  selected: boolean;
+  cursorOffset: Vector;
+  setOffset: (point: Point) => void;
+  showSelection: () => void;
+};
+
 type Shape = {
   readonly id: string;
   context: CanvasRenderingContext2D;
@@ -52,17 +71,11 @@ type Shape = {
   move: (point: Point) => void;
   checkIntersection: (point: Point) => boolean;
   transform: (point: Point) => void;
-  getNormalCoords: () => Coords;
-  normalize: () => void;
-  cursorOffset: Vector;
-  setOffset: (point: Point) => void;
-  styles: Styles;
-  setStyles: (styles: Styles) => void;
-  applyStyles: () => void;
-  selected: boolean;
-  drawBoundingRect: () => void;
+  getNormalCoords: () => Coordinates;
   specialRender?: boolean;
-} & Coords;
+} & Coordinates &
+  Stylable &
+  Selectable;
 
 interface Tool {
   title: ToolState;
@@ -95,40 +108,22 @@ interface MoveTool extends Tool {
   move: (point: Point) => void;
 }
 
-const getSnapCoords = ({ x0, x, y0, y }: Coords) => {
-  return Math.abs(x - x0) > Math.abs(y - y0)
-    ? { x: x, y: y0 }
-    : { x: x0, y: y };
-};
-
-const generateDefaultShape = (
-  { x, y }: Point,
+type ShapeGenerator = (
+  point: Point,
   context: CanvasRenderingContext2D,
   styles: Styles
-): Shape => {
+) => Shape;
+
+const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
   return {
     id: nextId(),
-    x0: x,
-    x,
-    y0: y,
-    y,
+    start: { ...point },
+    end: { ...point },
     selected: false,
     context,
     styles,
     getNormalCoords() {
-      const x0 = Math.min(this.x0, this.x);
-      const x = Math.max(this.x0, this.x);
-      const y0 = Math.min(this.y0, this.y);
-      const y = Math.max(this.y0, this.y);
-      return { x0, x, y0, y };
-    },
-    normalize() {
-      // DO NOT CALL INSIDE OTHER METHODS
-      const { x0, x, y0, y } = this.getNormalCoords();
-      this.x0 = x0;
-      this.x = x;
-      this.y0 = y0;
-      this.y = y;
+      throw new Error('normalizing coordinates not implemented');
     },
     applyStyles() {
       const context = this.context;
@@ -143,35 +138,100 @@ const generateDefaultShape = (
     },
     cursorOffset: { x: 0, y: 0 },
     setOffset({ x, y }) {
-      this.cursorOffset = { x: x - this.x0, y: y - this.y0 };
+      this.cursorOffset = { x: x - this.start.x, y: y - this.start.y };
     },
     render() {
       throw new Error('render not implemented');
     },
     move({ x, y }) {
-      throw new Error('moving not implemented');
+      const width = this.end.x - this.start.x;
+      const height = this.end.y - this.start.y;
+      this.start.x = x - this.cursorOffset?.x;
+      this.start.y = y - this.cursorOffset?.y;
+      this.end.x = this.start.x + width;
+      this.end.y = this.start.y + height;
     },
     transform({ x, y }) {
-      this.x = x;
-      this.y = y;
+      this.end.x = x;
+      this.end.y = y;
     },
     checkIntersection({ x, y }) {
       throw new Error('intersection not implemented');
     },
-    drawBoundingRect() {
-      const width = this.x - this.x0;
-      const height = this.y - this.y0;
+    showSelection() {
+      throw new Error('showSelection not implemented');
+    },
+  };
+};
+
+const generate2dShape: ShapeGenerator = (point, context, styles) => {
+  return {
+    ...generateDefaultShape(point, context, styles),
+    getNormalCoords() {
+      const minX = Math.min(this.start.x, this.end.x);
+      const maxX = Math.max(this.start.x, this.end.x);
+      const minY = Math.min(this.start.y, this.end.y);
+      const maxY = Math.max(this.start.y, this.end.y);
+      return { start: { x: minX, y: minY }, end: { x: maxX, y: maxY } };
+    },
+    transform({ x, y }) {
+      if (this.specialRender) {
+        this.end.x = x;
+        this.end.y =
+          y > this.start.y
+            ? this.start.y + Math.abs(x - this.start.x)
+            : this.start.y - Math.abs(x - this.start.x);
+      } else {
+        this.end.x = x;
+        this.end.y = y;
+      }
+    },
+    checkIntersection(point) {
+      const { start, end } = this.getNormalCoords();
+      return (
+        point.x >= start.x &&
+        point.x <= end.x &&
+        point.y >= start.y &&
+        point.y <= end.y
+      );
+    },
+    showSelection() {
+      const { start, end } = this.getNormalCoords();
+      const width = end.x - start.x;
+      const height = end.y - start.y;
       if (this.selected) {
         const ctx = this.context;
         const styles = this.styles;
         ctx.setLineDash([18]);
         ctx.lineWidth = 1;
         ctx.strokeStyle = defaultStyles.strokeStyle;
-        ctx.strokeRect(this.x0 - 10, this.y0 - 10, width + 20, height + 20);
+        ctx.strokeRect(start.x - 10, start.y - 10, width + 20, height + 20);
         ctx.setLineDash([1]);
         ctx.lineWidth = styles.width;
         ctx.strokeStyle = styles.strokeStyle;
       }
+    },
+  };
+};
+
+const generate1dShape: ShapeGenerator = (point, context, styles) => {
+  return {
+    ...generateDefaultShape(point, context, styles),
+    getNormalCoords() {
+      return {
+        start: this.start,
+        end: this.end,
+      };
+    },
+    checkIntersection(point) {
+      const OFFSET = 2;
+      const { start, end } = this.getNormalCoords();
+      //    A      C      B
+      //    *------*------*
+      const AC = getDistance(start, point);
+      const BC = getDistance(end, point);
+      const AB = getDistance(start, end);
+      return AC + BC <= AB + styles.width + OFFSET;
     },
   };
 };
@@ -204,36 +264,17 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'rectangle',
     icon: <BiRectangle size={sizes.md} title='rectangle' />,
     hotkey: 'r',
-    generateShape: ({ x, y }, context, styles) => {
-      const defaultProps = generateDefaultShape({ x, y }, context, styles);
+    generateShape: (point, context, styles) => {
+      const defaultProps = generate2dShape(point, context, styles);
       return {
         ...defaultProps,
         render() {
           this.applyStyles();
-          this.drawBoundingRect();
-          if (this.specialRender) {
-            const height = this.y - this.y0;
-            this.y =
-              height > 0
-                ? this.y0 + Math.abs(this.x - this.x0)
-                : this.y0 - Math.abs(this.x - this.x0);
-          }
-          const { x0, x, y0, y } = this.getNormalCoords();
           // 2 : 4 : 12 // 0.5 0.25 0.08 0
-          const r = Math.min(x - x0, y - y0) * 0;
-          drawRect({ x0, x, y0, y }, this.context, r);
-        },
-        move({ x, y }) {
-          const width = this.x - this.x0;
-          const height = this.y - this.y0;
-          this.x0 = x - this.cursorOffset?.x;
-          this.y0 = y - this.cursorOffset?.y;
-          this.x = this.x0 + width;
-          this.y = this.y0 + height;
-        },
-        checkIntersection({ x: _x, y: _y }) {
-          const { x0, x, y0, y } = this.getNormalCoords();
-          return _x >= x0 && _x <= x && _y >= y0 && _y <= y;
+          const rounding = 0;
+          const coordinates = this.getNormalCoords();
+          drawRect(coordinates, this.context, rounding);
+          this.showSelection();
         },
       };
     },
@@ -243,33 +284,28 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'circle',
     icon: <BiCircle size={sizes.md} title='circle' />,
     hotkey: 'c',
-    generateShape: ({ x, y }, context, styles) => {
-      const defaultProps = generateDefaultShape({ x, y }, context, styles);
+    generateShape: (point, context, styles) => {
+      const defaultProps = generate2dShape(point, context, styles);
       return {
         ...defaultProps,
         render() {
           this.applyStyles();
-          this.drawBoundingRect();
           this.context.beginPath();
-          const rx = Math.abs(this.x0 - this.x) / 2;
-          const ry = !this.specialRender ? Math.abs(this.y0 - this.y) / 2 : rx;
-          const x = this.x0 > this.x ? this.x0 - rx : this.x0 + rx;
-          const y = this.y0 > this.y ? this.y0 - ry : this.y0 + ry;
-          this.context.ellipse(x, y, rx, ry, 0, 0, 2 * Math.PI);
+          const { start, end } = this.getNormalCoords();
+          const rx = (end.x - start.x) / 2;
+          const ry = (end.y - start.y) / 2;
+          this.context.ellipse(
+            start.x + rx,
+            start.y + ry,
+            rx,
+            ry,
+            0,
+            0,
+            2 * Math.PI
+          );
           this.context.stroke();
           this.context.closePath();
-        },
-        move({ x, y }) {
-          const width = this.x - this.x0;
-          const height = this.y - this.y0;
-          this.x0 = x - this.cursorOffset?.x;
-          this.y0 = y - this.cursorOffset?.y;
-          this.x = this.x0 + width;
-          this.y = this.y0 + height;
-        },
-        checkIntersection({ x: _x, y: _y }) {
-          const { x0, x, y0, y } = this.getNormalCoords();
-          return _x >= x0 && _x <= x && _y >= y0 && _y <= y;
+          this.showSelection();
         },
       };
     },
@@ -281,27 +317,31 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
       <HiArrowNarrowLeft size={sizes.md} title='Arrow' className='-rotate-45' />
     ),
     hotkey: 'a',
-    generateShape: ({ x, y }, context, styles) => {
-      const defaultProps = generateDefaultShape({ x, y }, context, styles);
+    generateShape: (point, context, styles) => {
+      const defaultProps = generate1dShape(point, context, styles);
       return {
         ...defaultProps,
         render() {
           this.applyStyles();
-          const { x, y } = this.specialRender
-            ? getSnapCoords({ x0: this.x0, x: this.x, y0: this.y0, y: this.y })
-            : { x: this.x, y: this.y };
-          const [x0, y0] = [this.x0, this.y0];
-          drawLine({ x0, x, y0, y }, this.context);
+          const { start, end } = this.getNormalCoords();
+          const snapEnd = this.specialRender
+            ? getSnapPoint({ start, end })
+            : end;
+
+          drawLine({ start, end: snapEnd }, this.context);
 
           // headLen - distance between two points by formula * some ratio
           const headLen = Math.min(
-            Math.sqrt((x - x0) ** 2 + (y - y0) ** 2) * 1,
+            Math.sqrt((snapEnd.x - start.x) ** 2 + (snapEnd.y - start.y) ** 2) *
+              1,
             50
           );
-          drawArrowHead({ x0, x, y0, y }, this.context, headLen, Math.PI / 6);
-        },
-        normalize() {
-          return;
+          drawArrowHead(
+            { start, end: snapEnd },
+            this.context,
+            headLen,
+            Math.PI / 6
+          );
         },
       };
     },
@@ -311,20 +351,18 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'line',
     icon: <AiOutlineLine size={sizes.md} title='Line' className='-rotate-45' />,
     hotkey: 'l',
-    generateShape: ({ x, y }, context, styles) => {
-      const defaultProps = generateDefaultShape({ x, y }, context, styles);
+    generateShape: (point, context, styles) => {
+      const defaultProps = generate1dShape(point, context, styles);
       return {
         ...defaultProps,
         render() {
           this.applyStyles();
-          const { x, y } = this.specialRender
-            ? getSnapCoords({ x0: this.x0, x: this.x, y0: this.y0, y: this.y })
-            : { x: this.x, y: this.y };
-          const [x0, y0] = [this.x0, this.y0];
-          drawLine({ x0, x, y0, y }, this.context);
-        },
-        normalize() {
-          return;
+          const { start, end } = this.getNormalCoords();
+          const snapEnd = this.specialRender
+            ? getSnapPoint({ start, end })
+            : end;
+
+          drawLine({ start, end: snapEnd }, this.context);
         },
       };
     },
@@ -352,5 +390,13 @@ const defaultStyles: Styles = {
   lineCap: 'round',
 };
 
-export type { Tool, ToolState, ToolControlProps, Shape, Styles, Coords };
+export type {
+  Tool,
+  ToolState,
+  ToolControlProps,
+  Shape,
+  Styles,
+  Coordinates,
+  Point,
+};
 export { tools, defaultStyles };

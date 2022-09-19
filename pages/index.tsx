@@ -6,6 +6,7 @@ import ExtraControls from '../components/ExtraControls';
 import Logo from '../components/Logo';
 import {
   defaultStyles,
+  Point,
   Shape,
   Styles,
   tools,
@@ -19,9 +20,9 @@ const useElements = (initialState: Shape[]) => {
     if (id === undefined) return null;
     return elements.find((e) => e.id === id);
   };
-  const getElementAtPosition = (x: number, y: number) => {
+  const getElementAtPosition = (point: Point) => {
     return elements
-      .filter((element) => element.checkIntersection({ x, y }) === true)
+      .filter((element) => element.checkIntersection(point) === true)
       .pop();
   };
   const getCurrentElement = () => {
@@ -124,10 +125,10 @@ const Home: NextPage = () => {
     });
   }, [elements]);
 
-  const setCursorStyle = (x: number, y: number) => {
+  const setCursorStyle = (point: Point) => {
     if (!canvasRef.current) return;
     if (tool?.title === 'cursor') {
-      canvasRef.current.style.cursor = getElementAtPosition(x, y)
+      canvasRef.current.style.cursor = getElementAtPosition(point)
         ? 'move'
         : 'default';
     } else {
@@ -137,20 +138,20 @@ const Home: NextPage = () => {
 
   const start = (event: MouseEvent<HTMLCanvasElement>) => {
     if (!tool || !ctxRef.current) return;
-    const { type } = tool;
-    const { offsetX: x, offsetY: y } = event.nativeEvent;
-    switch (type) {
+    const { offsetX, offsetY } = event.nativeEvent;
+    const point = { x: offsetX, y: offsetY };
+    switch (tool.type) {
       case 'shape': {
-        const element = tool.generateShape({ x, y }, ctxRef.current, styles);
+        const element = tool.generateShape(point, ctxRef.current, styles);
         setElements([...elements, element]);
         setStatus('drawing');
         break;
       }
       case 'selection': {
-        const element = getElementAtPosition(x, y);
+        const element = getElementAtPosition(point);
         if (element) {
           setStatus('moving');
-          element.setOffset({ x, y });
+          element.setOffset(point);
           updateElements(element);
           setSelected(element);
         } else {
@@ -161,23 +162,23 @@ const Home: NextPage = () => {
     }
   };
   const draw = (event: MouseEvent<HTMLCanvasElement>) => {
-    const { offsetX: x, offsetY: y } = event.nativeEvent;
-    setCursorStyle(x, y);
+    const { offsetX, offsetY } = event.nativeEvent;
+    const point = { x: offsetX, y: offsetY };
+    setCursorStyle(point);
     if (status === 'idle' || !tool) return;
-    const { type } = tool;
 
-    switch (type) {
+    switch (tool.type) {
       case 'shape': {
         const element = getCurrentElement();
         element.specialRender = special;
-        element.transform({ x, y });
+        element.transform(point);
         updateElements(element);
         break;
       }
       case 'selection': {
         const element = getSelected();
         if (!element) return;
-        element.move({ x, y });
+        element.move(point);
         updateElements(element);
         break;
       }
@@ -186,7 +187,6 @@ const Home: NextPage = () => {
   const end = () => {
     if (tool?.type === 'shape') {
       const element = getCurrentElement();
-      element.normalize();
       setSelected(element);
     }
     // setTool('cursor');
