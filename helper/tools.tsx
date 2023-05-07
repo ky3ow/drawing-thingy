@@ -100,12 +100,12 @@ interface UtilTool extends Tool {
 
 interface MoveTool extends Tool {
   type: 'selection';
-  selected: Shape | undefined;
-  selectOffset: Vector;
-  selectElementAtPosition: (point: Point) => Shape | undefined;
-  setElements: (elements: Shape[]) => void;
-  setOffset: (point: Point) => void;
-  move: (point: Point) => void;
+  // selected: Shape | undefined;
+  // selectOffset: Vector;
+  // selectElementAtPosition: (point: Point) => Shape | undefined;
+  // setElements: (elements: Shape[]) => void;
+  // setOffset: (point: Point) => void;
+  // move: (point: Point) => void;
 }
 
 type ShapeGenerator = (
@@ -243,22 +243,22 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     icon: <BsFillCursorFill size={sizes.md} className='-scale-x-100' />,
     hotkey: 'v',
   },
-  {
-    type: 'util',
-    title: 'brush',
-    icon: <GiPaintBrush size={sizes.md} className='-scale-x-100' />,
-    hotkey: 'b',
-    action: {
-      // start: (context, x, y) => {
-      //   context.beginPath();
-      //   context.moveTo(x, y);
-      // },
-      // run: (context, x, y) => {
-      //   context.lineTo(x, y);
-      //   context.stroke();
-      // },
-    },
-  },
+  // {
+  //   type: 'util',
+  //   title: 'brush',
+  //   icon: <GiPaintBrush size={sizes.md} className='-scale-x-100' />,
+  //   hotkey: 'b',
+  //   action: {
+  //     // start: (context, x, y) => {
+  //     //   context.beginPath();
+  //     //   context.moveTo(x, y);
+  //     // },
+  //     // run: (context, x, y) => {
+  //     //   context.lineTo(x, y);
+  //     //   context.stroke();
+  //     // },
+  //   },
+  // },
   {
     type: 'shape',
     title: 'rectangle',
