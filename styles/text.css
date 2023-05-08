@@ -1,0 +1,11 @@
+:root {
+  --warning: rgb(221, 90, 90);
+}
+
+.dark {
+  --warning: rgb(108, 190, 222);
+}
+
+.component {
+  background-color: var(--warning);
+}
