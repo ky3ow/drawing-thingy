@@ -14,17 +14,8 @@ const drawRect: DrawFunc<[rounded?: number]> = (
 ) => {
   if (rounded > 0.5) rounded = 0.5;
   const radius = Math.min(end.x - start.x, end.y - start.y) * rounded;
-  context.beginPath();
-  context.moveTo(start.x, start.y + radius);
-  context.quadraticCurveTo(start.x, start.y, start.x + radius, start.y);
-  context.lineTo(end.x - radius, start.y);
-  context.quadraticCurveTo(end.x, start.y, end.x, start.y + radius);
-  context.lineTo(end.x, end.y - radius);
-  context.quadraticCurveTo(end.x, end.y, end.x - radius, end.y);
-  context.lineTo(start.x + radius, end.y);
-  context.quadraticCurveTo(start.x, end.y, start.x, end.y - radius);
-  context.closePath();
-  context.stroke();
+  context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y)
+  const a = Math.min(end.x - start.x, end.y - start.y) * rounded;
 };
 
 const getSnapPoint = ({ start, end }: Coordinates): Point => {

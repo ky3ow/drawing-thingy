@@ -70,6 +70,7 @@ type Shape = {
   render: (special?: boolean) => void;
   move: (point: Point) => void;
   checkIntersection: (point: Point) => boolean;
+  checkResize: (point: Point) => boolean;
   transform: (point: Point) => void;
   getNormalCoords: () => Coordinates;
   specialRender?: boolean;
@@ -155,6 +156,9 @@ const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
       this.end.x = x;
       this.end.y = y;
     },
+    checkResize({ x, y }) {
+      throw new Error('resize not implemented');
+    },
     checkIntersection({ x, y }) {
       throw new Error('intersection not implemented');
     },
@@ -186,6 +190,32 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
         this.end.y = y;
       }
     },
+    checkResize(point) {
+      const OFFSET = 10;
+      const { start, end } = this.getNormalCoords();
+      const leftUp =
+        point.x >= start.x - OFFSET &&
+        point.x <= start.x + OFFSET &&
+        point.y >= start.y - OFFSET &&
+        point.y <= start.y + OFFSET; 
+      const rightUp =
+        point.x >= end.x - OFFSET &&
+        point.x <= end.x + OFFSET &&
+        point.y >= start.y - OFFSET &&
+        point.y <= start.y + OFFSET; 
+      const leftDown =
+        point.x >= start.x - OFFSET &&
+        point.x <= start.x + OFFSET &&
+        point.y >= end.y - OFFSET &&
+        point.y <= end.y + OFFSET; 
+      const rightDown =
+        point.x >= end.x - OFFSET &&
+        point.x <= end.x + OFFSET &&
+        point.y >= end.y - OFFSET &&
+        point.y <= end.y + OFFSET; 
+        console.log(leftDown, rightDown);
+      return leftUp || rightUp || leftDown || rightDown;
+    },
     checkIntersection(point) {
       const { start, end } = this.getNormalCoords();
       return (
@@ -196,19 +226,26 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
       );
     },
     showSelection() {
+      const OFFSET = 2;
       const { start, end } = this.getNormalCoords();
       const width = end.x - start.x;
       const height = end.y - start.y;
       if (this.selected) {
         const ctx = this.context;
         const styles = this.styles;
-        ctx.setLineDash([18]);
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = defaultStyles.strokeStyle;
-        ctx.strokeRect(start.x - 10, start.y - 10, width + 20, height + 20);
+        const fillStyle = ctx.fillStyle;
+        ctx.strokeStyle = '#A45EE5'
+        ctx.fillStyle = '#2C041C';
+        ctx.lineWidth = 5;
+        ctx.moveTo(start.x + OFFSET, start.y + OFFSET);
+        ctx.ellipse(start.x + OFFSET, start.y + OFFSET, 10, 10, 360, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fill();
         ctx.setLineDash([1]);
         ctx.lineWidth = styles.width;
         ctx.strokeStyle = styles.strokeStyle;
+        ctx.fillStyle = fillStyle;
       }
     },
   };

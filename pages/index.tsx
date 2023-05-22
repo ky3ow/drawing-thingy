@@ -104,17 +104,38 @@ const Home: NextPage = () => {
     canvas.style.height = '100vh';
     ctxRef.current = ctx;
 
-    window.addEventListener('keydown', (event) => {
+    const handleShiftDown = (event: KeyboardEvent) => {
       if (event.key === 'Shift') {
         setSpecial(true);
       }
-    });
-    window.addEventListener('keyup', (event) => {
+    };
+
+    const handleShiftUp = (event: KeyboardEvent) => {
       if (event.key === 'Shift') {
         setSpecial(false);
       }
-    });
-  }, []);
+    };
+
+    const handleResize = (event: UIEvent) => {
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      canvas.style.width = `${container.clientWidth}px`;
+      canvas.style.height = '100vh';
+      elements.forEach((el) => {
+        el.render();
+      });
+    };
+
+    window.addEventListener('keydown', handleShiftDown);
+    window.addEventListener('keyup', handleShiftUp);
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('keydown', handleShiftDown);
+      window.removeEventListener('keyup', handleShiftUp);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [elements]);
 
   useEffect(() => {
     ctxRef.current?.clearRect(
@@ -152,6 +173,7 @@ const Home: NextPage = () => {
       }
       case 'selection': {
         const element = getElementAtPosition(point);
+
         if (element) {
           setStatus('moving');
           element.setOffset(point);
@@ -181,6 +203,7 @@ const Home: NextPage = () => {
       case 'selection': {
         const element = getSelected();
         if (!element) return;
+        element?.checkResize({x: offsetX, y: offsetY});
         element.move(point);
         updateElements(element);
         break;
@@ -192,7 +215,7 @@ const Home: NextPage = () => {
       const element = getCurrentElement();
       setSelected(element);
     }
-    // setTool('cursor');
+    setTool('cursor');
     setStatus('idle');
   };
 
