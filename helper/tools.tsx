@@ -73,7 +73,7 @@ type Shape = {
   move: (point: Point) => void;
   checkIntersection: (point: Point) => Position;
   transform: (start: Point, end: Point) => void;
-  getNormalCoords: () => Coordinates;
+  normalize: () => void;
   specialRender?: boolean;
 } & Coordinates &
   Stylable &
@@ -134,7 +134,7 @@ const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
     selected: false,
     context,
     styles,
-    getNormalCoords() {
+    normalize() {
       throw new Error('normalizing coordinates not implemented');
     },
     applyStyles() {
@@ -183,12 +183,13 @@ const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
 const generate2dShape: ShapeGenerator = (point, context, styles) => {
   return {
     ...generateDefaultShape(point, context, styles),
-    getNormalCoords() {
+    normalize() {
       const minX = Math.min(this.start.x, this.end.x);
       const maxX = Math.max(this.start.x, this.end.x);
       const minY = Math.min(this.start.y, this.end.y);
       const maxY = Math.max(this.start.y, this.end.y);
-      return { start: { x: minX, y: minY }, end: { x: maxX, y: maxY } };
+      this.start = { x: minX, y: minY };
+      this.end = { x: maxX, y: maxY };
     },
     transform(start, end) {
       const { x: x0, y: y0 } = start;
@@ -210,7 +211,7 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
     },
     checkIntersection(point) {
       const OFFSET = 10;
-      const { start, end } = this.getNormalCoords();
+      const { start, end } = this;
       if (isNear(point.x, start.x, point.y, start.y, OFFSET)) return 'tl';
       if (isNear(point.x, end.x, point.y, start.y, OFFSET)) return 'tr';
       if (isNear(point.x, start.x, point.y, end.y, OFFSET)) return 'bl';
@@ -232,7 +233,7 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
     },
     showSelection() {
       const OFFSET = 2;
-      const { start, end } = this.getNormalCoords();
+      const { start, end } = this;
       const width = end.x - start.x;
       const height = end.y - start.y;
       if (this.selected) {
@@ -259,7 +260,7 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
 const generate1dShape: ShapeGenerator = (point, context, styles) => {
   return {
     ...generateDefaultShape(point, context, styles),
-    getNormalCoords() {
+    normalize() {
       return {
         start: this.start,
         end: this.end,
@@ -267,7 +268,7 @@ const generate1dShape: ShapeGenerator = (point, context, styles) => {
     },
     checkIntersection(point) {
       const OFFSET = 2;
-      const { start, end } = this.getNormalCoords();
+      const { start, end } = this;
       //    A      C      B
       //    *------*------*
       const AC = getDistance(start, point);
@@ -320,8 +321,8 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
           this.applyStyles();
           // 2 : 4 : 12 // 0.5 0.25 0.08 0
           const rounding = 0;
-          const coordinates = this.getNormalCoords();
-          drawRect(coordinates, this.context, rounding);
+          const { start, end } = this;
+          drawRect({ start, end }, this.context, rounding);
           this.showSelection();
         },
       };
@@ -339,12 +340,14 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
         render() {
           this.applyStyles();
           this.context.beginPath();
-          const { start, end } = this.getNormalCoords();
-          const rx = (end.x - start.x) / 2;
-          const ry = (end.y - start.y) / 2;
+          const { start, end } = this;
+          const rx = Math.abs(end.x - start.x) / 2;
+          const ry = Math.abs(end.y - start.y) / 2;
+          const ix = end.x > start.x ? 1 : -1;
+          const iy = end.y > start.y ? 1 : -1;
           this.context.ellipse(
-            start.x + rx,
-            start.y + ry,
+            start.x + rx * ix,
+            start.y + ry * iy,
             rx,
             ry,
             0,
@@ -371,7 +374,7 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
         ...defaultProps,
         render() {
           this.applyStyles();
-          const { start, end } = this.getNormalCoords();
+          const { start, end } = this;
           const snapEnd = this.specialRender
             ? getSnapPoint({ start, end })
             : end;
@@ -405,7 +408,7 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
         ...defaultProps,
         render() {
           this.applyStyles();
-          const { start, end } = this.getNormalCoords();
+          const { start, end } = this;
           const snapEnd = this.specialRender
             ? getSnapPoint({ start, end })
             : end;

@@ -258,9 +258,10 @@ const Home: NextPage = () => {
   const end = () => {
     if (tool?.type === 'shape') {
       const element = getCurrentElement();
+      element.normalize();
       setSelected(element);
     } else if (tool?.type === 'selection') {
-
+      getSelected()?.normalize();
     }
     setTool('cursor');
     setStatus('idle');
