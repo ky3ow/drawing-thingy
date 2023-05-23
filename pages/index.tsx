@@ -7,6 +7,7 @@ import Logo from '../components/Logo';
 import {
   defaultStyles,
   Point,
+  Position,
   Shape,
   Styles,
   tools,
@@ -21,10 +22,12 @@ const useElements = (initialState: Shape[]) => {
     if (id === undefined) return null;
     return elements.find((e) => e.id === id);
   };
-  const getElementAtPosition = (point: Point) => {
-    return elements
-      .filter((element) => element.checkIntersection(point) === true)
-      .pop();
+  const getElementAtPosition = (point: Point): [Shape | null, Position] => {
+    for (const element of elements) {
+      const pos = element.checkIntersection(point);
+      if(pos) return [element, pos];
+    }
+    return [null, null];
   };
   const getCurrentElement = () => {
     return elements[elements.length - 1];
@@ -71,7 +74,8 @@ const useElements = (initialState: Shape[]) => {
 
 const Home: NextPage = () => {
   const [activeTool, setTool] = useState<ToolState>();
-  const [status, setStatus] = useState<'idle' | 'drawing' | 'moving'>('idle');
+  const [status, setStatus] = useState<'idle' | 'drawing' | 'moving' | 'resizing'>('idle');
+  const [position, setPosition] = useState<Position>(null);
   const {
     elements,
     getElementAtPosition,
@@ -152,9 +156,36 @@ const Home: NextPage = () => {
   const setCursorStyle = (point: Point) => {
     if (!canvasRef.current) return;
     if (tool?.title === 'cursor') {
-      canvasRef.current.style.cursor = getElementAtPosition(point)
-        ? 'move'
-        : 'default';
+      const [_, pos] = getElementAtPosition(point);
+      let cursorType;
+      switch (pos) {
+        case 'in': 
+          cursorType = 'move';
+          break;
+        case 'point':
+          cursorType = 'pointer';
+          break;
+        case 'tl':
+        case 'br':
+          cursorType = 'nwse-resize';
+          break;
+        case 'tr':
+        case 'bl':
+          cursorType = 'nesw-resize';
+          break;
+        case 't':
+        case 'b':
+          cursorType = 'ns-resize';
+          break;
+        case 'l':
+        case 'r':
+          cursorType = 'ew-resize';
+          break;
+        default:
+          cursorType = 'default';
+          break;
+      }
+      canvasRef.current.style.cursor = cursorType;      
     } else {
       canvasRef.current.style.cursor = 'crosshair';
     }
@@ -172,15 +203,20 @@ const Home: NextPage = () => {
         break;
       }
       case 'selection': {
-        const element = getElementAtPosition(point);
-
-        if (element) {
-          setStatus('moving');
-          element.setOffset(point);
-          updateElements(element);
-          setSelected(element);
-        } else {
+        const [element, position] = getElementAtPosition(point);
+        setPosition(position);
+        if (position === 'in') {
+          if (element) {
+            setStatus('moving');
+            element.setOffset(point);
+            updateElements(element);
+            setSelected(element);
+          }
+        } else if (position === null) {
           setSelected(undefined);
+        } else {
+          setStatus('resizing');
+          element!.setOffset(point);
         }
         break;
       }
@@ -188,23 +224,32 @@ const Home: NextPage = () => {
   };
   const draw = (event: MouseEvent<HTMLCanvasElement>) => {
     const { offsetX, offsetY } = event.nativeEvent;
-    const point = { x: offsetX, y: offsetY };
-    setCursorStyle(point);
+    const endPoint = { x: offsetX, y: offsetY };
+    setCursorStyle(endPoint);
     if (status === 'idle' || !tool) return;
 
     switch (tool.type) {
       case 'shape': {
         const element = getCurrentElement();
         element.specialRender = special;
-        element.transform(point);
+        element.transform(element.start, endPoint);
+        
         updateElements(element);
         break;
       }
       case 'selection': {
         const element = getSelected();
         if (!element) return;
-        element?.checkResize({x: offsetX, y: offsetY});
-        element.move(point);
+        switch (position) {
+          case 'in': {
+            element.move(endPoint);
+            break;
+          }
+          case 'tl': {
+            element.transform(endPoint, element.end);
+            break;
+          }
+        }
         updateElements(element);
         break;
       }
@@ -214,6 +259,8 @@ const Home: NextPage = () => {
     if (tool?.type === 'shape') {
       const element = getCurrentElement();
       setSelected(element);
+    } else if (tool?.type === 'selection') {
+
     }
     setTool('cursor');
     setStatus('idle');

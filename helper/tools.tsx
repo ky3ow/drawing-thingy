@@ -64,14 +64,15 @@ type Selectable = {
   showSelection: () => void;
 };
 
+type Position = 'tl' | 't' | 'tr' | 'l' | 'bl' | 'b' | 'br' | 'r' | 'point' | 'in' | null;
+
 type Shape = {
   readonly id: string;
   context: CanvasRenderingContext2D;
   render: (special?: boolean) => void;
   move: (point: Point) => void;
-  checkIntersection: (point: Point) => boolean;
-  checkResize: (point: Point) => boolean;
-  transform: (point: Point) => void;
+  checkIntersection: (point: Point) => Position;
+  transform: (start: Point, end: Point) => void;
   getNormalCoords: () => Coordinates;
   specialRender?: boolean;
 } & Coordinates &
@@ -115,6 +116,16 @@ type ShapeGenerator = (
   styles: Styles
 ) => Shape;
 
+const isNear = (
+  x: number,
+  x1: number,
+  y: number,
+  y1: number,
+  offset: number
+) => {
+  return Math.abs(x - x1) <= offset && Math.abs(y - y1) <= offset;
+};
+
 const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
   return {
     id: nextId(),
@@ -152,12 +163,13 @@ const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
       this.end.x = this.start.x + width;
       this.end.y = this.start.y + height;
     },
-    transform({ x, y }) {
+    transform(start, end) {
+      const { x: x0, y: y0 } = start;
+      const { x, y } = end;
+      this.start.x = x0;
+      this.start.y = y0;
       this.end.x = x;
       this.end.y = y;
-    },
-    checkResize({ x, y }) {
-      throw new Error('resize not implemented');
     },
     checkIntersection({ x, y }) {
       throw new Error('intersection not implemented');
@@ -178,52 +190,45 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
       const maxY = Math.max(this.start.y, this.end.y);
       return { start: { x: minX, y: minY }, end: { x: maxX, y: maxY } };
     },
-    transform({ x, y }) {
+    transform(start, end) {
+      const { x: x0, y: y0 } = start;
+      const { x, y } = end;
       if (this.specialRender) {
+        this.start.x = x0;
+        this.start.y = y0;
         this.end.x = x;
         this.end.y =
           y > this.start.y
             ? this.start.y + Math.abs(x - this.start.x)
             : this.start.y - Math.abs(x - this.start.x);
       } else {
+        this.start.x = x0;
+        this.start.y = y0;
         this.end.x = x;
         this.end.y = y;
       }
     },
-    checkResize(point) {
+    checkIntersection(point) {
       const OFFSET = 10;
       const { start, end } = this.getNormalCoords();
-      const leftUp =
-        point.x >= start.x - OFFSET &&
-        point.x <= start.x + OFFSET &&
-        point.y >= start.y - OFFSET &&
-        point.y <= start.y + OFFSET; 
-      const rightUp =
-        point.x >= end.x - OFFSET &&
-        point.x <= end.x + OFFSET &&
-        point.y >= start.y - OFFSET &&
-        point.y <= start.y + OFFSET; 
-      const leftDown =
-        point.x >= start.x - OFFSET &&
-        point.x <= start.x + OFFSET &&
-        point.y >= end.y - OFFSET &&
-        point.y <= end.y + OFFSET; 
-      const rightDown =
-        point.x >= end.x - OFFSET &&
-        point.x <= end.x + OFFSET &&
-        point.y >= end.y - OFFSET &&
-        point.y <= end.y + OFFSET; 
-        console.log(leftDown, rightDown);
-      return leftUp || rightUp || leftDown || rightDown;
-    },
-    checkIntersection(point) {
-      const { start, end } = this.getNormalCoords();
-      return (
+      if (isNear(point.x, start.x, point.y, start.y, OFFSET)) return 'tl';
+      if (isNear(point.x, end.x, point.y, start.y, OFFSET)) return 'tr';
+      if (isNear(point.x, start.x, point.y, end.y, OFFSET)) return 'bl';
+      if (isNear(point.x, end.x, point.y, end.y, OFFSET)) return 'br';
+      const middleX = (start.x + end.x) / 2;
+      if (isNear(point.x, middleX, point.y, start.y, OFFSET)) return 't';
+      if (isNear(point.x, middleX, point.y, end.y, OFFSET)) return 'b';
+      const middleY = (start.y + end.y) / 2;
+      if (isNear(point.x, start.x, point.y, middleY, OFFSET)) return 'l';
+      if (isNear(point.x, end.x, point.y, middleY, OFFSET)) return 'r';
+      if (
         point.x >= start.x &&
         point.x <= end.x &&
         point.y >= start.y &&
         point.y <= end.y
-      );
+      )
+        return 'in';
+      return null;
     },
     showSelection() {
       const OFFSET = 2;
@@ -268,7 +273,13 @@ const generate1dShape: ShapeGenerator = (point, context, styles) => {
       const AC = getDistance(start, point);
       const BC = getDistance(end, point);
       const AB = getDistance(start, end);
-      return AC + BC <= AB + styles.width + OFFSET;
+      if (
+        isNear(point.x, start.x, point.y, start.y, OFFSET) ||
+        isNear(point.x, end.x, point.y, end.y, OFFSET)
+      )
+        return 'point';
+      if (AC + BC <= AB + styles.width + OFFSET) return 'in';
+      return null;
     },
   };
 };
@@ -435,5 +446,6 @@ export type {
   Styles,
   Coordinates,
   Point,
+  Position,
 };
 export { tools, defaultStyles };
