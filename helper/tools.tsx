@@ -69,12 +69,11 @@ type Position = 'tl' | 't' | 'tr' | 'l' | 'bl' | 'b' | 'br' | 'r' | 'point' | 'i
 type Shape = {
   readonly id: string;
   context: CanvasRenderingContext2D;
-  render: (special?: boolean) => void;
+  render: () => void;
   move: (point: Point) => void;
   checkIntersection: (point: Point) => Position;
   transform: (start: Point, end: Point) => void;
   normalize: () => void;
-  specialRender?: boolean;
 } & Coordinates &
   Stylable &
   Selectable;
@@ -194,20 +193,10 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
     transform(start, end) {
       const { x: x0, y: y0 } = start;
       const { x, y } = end;
-      if (this.specialRender) {
-        this.start.x = x0;
-        this.start.y = y0;
-        this.end.x = x;
-        this.end.y =
-          y > this.start.y
-            ? this.start.y + Math.abs(x - this.start.x)
-            : this.start.y - Math.abs(x - this.start.x);
-      } else {
-        this.start.x = x0;
-        this.start.y = y0;
-        this.end.x = x;
-        this.end.y = y;
-      }
+      this.start.x = x0;
+      this.start.y = y0;
+      this.end.x = x;
+      this.end.y = y;
     },
     checkIntersection(point) {
       const OFFSET = 10;
@@ -240,11 +229,19 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
         const ctx = this.context;
         const styles = this.styles;
         const fillStyle = ctx.fillStyle;
-        ctx.strokeStyle = '#A45EE5'
+        ctx.strokeStyle = '#A45EE5';
         ctx.fillStyle = '#2C041C';
         ctx.lineWidth = 5;
         ctx.moveTo(start.x + OFFSET, start.y + OFFSET);
-        ctx.ellipse(start.x + OFFSET, start.y + OFFSET, 10, 10, 360, 0, Math.PI * 2);
+        ctx.ellipse(
+          start.x + OFFSET,
+          start.y + OFFSET,
+          10,
+          10,
+          360,
+          0,
+          Math.PI * 2
+        );
         ctx.closePath();
         ctx.stroke();
         ctx.fill();
@@ -375,20 +372,16 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
         render() {
           this.applyStyles();
           const { start, end } = this;
-          const snapEnd = this.specialRender
-            ? getSnapPoint({ start, end })
-            : end;
-
-          drawLine({ start, end: snapEnd }, this.context);
+          drawLine({ start, end}, this.context);
 
           // headLen - distance between two points by formula * some ratio
           const headLen = Math.min(
-            Math.sqrt((snapEnd.x - start.x) ** 2 + (snapEnd.y - start.y) ** 2) *
+            Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2) *
               1,
             50
           );
           drawArrowHead(
-            { start, end: snapEnd },
+            { start, end },
             this.context,
             headLen,
             Math.PI / 6
@@ -409,11 +402,7 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
         render() {
           this.applyStyles();
           const { start, end } = this;
-          const snapEnd = this.specialRender
-            ? getSnapPoint({ start, end })
-            : end;
-
-          drawLine({ start, end: snapEnd }, this.context);
+          drawLine({ start, end }, this.context);
         },
       };
     },

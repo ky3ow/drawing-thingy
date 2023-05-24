@@ -90,7 +90,6 @@ const Home: NextPage = () => {
   }, [activeTool]);
 
   const [styles, setStyles] = useState<Styles>(defaultStyles);
-  const [special, setSpecial] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
@@ -108,18 +107,6 @@ const Home: NextPage = () => {
     canvas.style.height = '100vh';
     ctxRef.current = ctx;
 
-    const handleShiftDown = (event: KeyboardEvent) => {
-      if (event.key === 'Shift') {
-        setSpecial(true);
-      }
-    };
-
-    const handleShiftUp = (event: KeyboardEvent) => {
-      if (event.key === 'Shift') {
-        setSpecial(false);
-      }
-    };
-
     const handleResize = (event: UIEvent) => {
       canvas.width = container.clientWidth;
       canvas.height = container.clientHeight;
@@ -130,13 +117,9 @@ const Home: NextPage = () => {
       });
     };
 
-    window.addEventListener('keydown', handleShiftDown);
-    window.addEventListener('keyup', handleShiftUp);
     window.addEventListener('resize', handleResize);
 
     return () => {
-      window.removeEventListener('keydown', handleShiftDown);
-      window.removeEventListener('keyup', handleShiftUp);
       window.removeEventListener('resize', handleResize);
     };
   }, [elements]);
@@ -158,32 +141,37 @@ const Home: NextPage = () => {
     if (tool?.title === 'cursor') {
       const [_, pos] = getElementAtPosition(point);
       let cursorType;
-      switch (pos) {
-        case 'in': 
-          cursorType = 'move';
-          break;
-        case 'point':
-          cursorType = 'pointer';
-          break;
-        case 'tl':
-        case 'br':
-          cursorType = 'nwse-resize';
-          break;
-        case 'tr':
-        case 'bl':
-          cursorType = 'nesw-resize';
-          break;
-        case 't':
-        case 'b':
-          cursorType = 'ns-resize';
-          break;
-        case 'l':
-        case 'r':
-          cursorType = 'ew-resize';
-          break;
-        default:
-          cursorType = 'default';
-          break;
+      if (getSelected()) {
+        switch (pos) {
+          case 'in':
+            cursorType = 'move';
+            break;
+          case 'point':
+            cursorType = 'pointer';
+            break;
+          case 'tl':
+          case 'br':
+            cursorType = 'nwse-resize';
+            break;
+          case 'tr':
+          case 'bl':
+            cursorType = 'nesw-resize';
+            break;
+          case 't':
+          case 'b':
+            cursorType = 'ns-resize';
+            break;
+          case 'l':
+          case 'r':
+            cursorType = 'ew-resize';
+            break;
+          default:
+            cursorType = 'default';
+        }
+      } else if (pos === 'in') {
+        cursorType = 'move';
+      } else {
+        cursorType = 'default';
       }
       canvasRef.current.style.cursor = cursorType;      
     } else {
@@ -231,7 +219,6 @@ const Home: NextPage = () => {
     switch (tool.type) {
       case 'shape': {
         const element = getCurrentElement();
-        element.specialRender = special;
         element.transform(element.start, endPoint);
         
         updateElements(element);
