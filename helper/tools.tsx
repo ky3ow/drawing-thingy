@@ -140,7 +140,7 @@ const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
       const context = this.context;
       const { fillStyle, lineCap, strokeStyle, width } = this.styles;
       context.strokeStyle = strokeStyle;
-      context.fillStyle = strokeStyle;
+      context.fillStyle = fillStyle;
       context.lineWidth = width;
       context.lineCap = lineCap;
     },
@@ -228,11 +228,11 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
       if (this.selected) {
         const ctx = this.context;
         const styles = this.styles;
-        const fillStyle = ctx.fillStyle;
         ctx.strokeStyle = '#A45EE5';
         ctx.fillStyle = '#2C041C';
         ctx.lineWidth = 5;
         ctx.moveTo(start.x + OFFSET, start.y + OFFSET);
+        ctx.beginPath();
         ctx.ellipse(
           start.x + OFFSET,
           start.y + OFFSET,
@@ -248,7 +248,7 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
         ctx.setLineDash([1]);
         ctx.lineWidth = styles.width;
         ctx.strokeStyle = styles.strokeStyle;
-        ctx.fillStyle = fillStyle;
+        ctx.fillStyle = styles.fillStyle;
       }
     },
   };
@@ -352,6 +352,7 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
             2 * Math.PI
           );
           this.context.stroke();
+          this.context.fill();
           this.context.closePath();
           this.showSelection();
         },
