@@ -7,6 +7,7 @@ import { sizes } from '../components/base/ButtonBase';
 import nextId from 'react-id-generator';
 import {
   drawArrowHead,
+  drawCircle,
   drawLine,
   drawRect,
   getDistance,
@@ -64,7 +65,7 @@ type Selectable = {
   showSelection: () => void;
 };
 
-type Position = 'tl' | 't' | 'tr' | 'l' | 'bl' | 'b' | 'br' | 'r' | 'point' | 'in' | null;
+type Position = 'tl' | 't' | 'tr' | 'l' | 'bl' | 'b' | 'br' | 'r' | 'start' | 'end' | 'in' | null;
 
 type Shape = {
   readonly id: string;
@@ -190,14 +191,6 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
       this.start = { x: minX, y: minY };
       this.end = { x: maxX, y: maxY };
     },
-    transform(start, end) {
-      const { x: x0, y: y0 } = start;
-      const { x, y } = end;
-      this.start.x = x0;
-      this.start.y = y0;
-      this.end.x = x;
-      this.end.y = y;
-    },
     checkIntersection(point) {
       const OFFSET = 10;
       const { start, end } = this;
@@ -221,30 +214,24 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
       return null;
     },
     showSelection() {
-      const OFFSET = 2;
+      const selectionRad = 5;
       const { start, end } = this;
       const width = end.x - start.x;
       const height = end.y - start.y;
       if (this.selected) {
         const ctx = this.context;
         const styles = this.styles;
-        ctx.strokeStyle = '#A45EE5';
-        ctx.fillStyle = '#2C041C';
+        ctx.fillStyle = '#BF40BF';
+        ctx.strokeStyle = '#BF40BF';
         ctx.lineWidth = 5;
-        ctx.moveTo(start.x + OFFSET, start.y + OFFSET);
-        ctx.beginPath();
-        ctx.ellipse(
-          start.x + OFFSET,
-          start.y + OFFSET,
-          10,
-          10,
-          360,
-          0,
-          Math.PI * 2
-        );
-        ctx.closePath();
-        ctx.stroke();
-        ctx.fill();
+        drawCircle(ctx, start.x, start.y, selectionRad);
+        drawCircle(ctx, end.x, start.y, selectionRad);
+        drawCircle(ctx, end.x, end.y, selectionRad);
+        drawCircle(ctx, start.x, end.y, selectionRad);
+        drawCircle(ctx, (start.x + end.x) / 2, start.y, selectionRad);
+        drawCircle(ctx, (start.x + end.x) / 2, end.y, selectionRad);
+        drawCircle(ctx, start.x, (start.y + end.y) / 2, selectionRad);
+        drawCircle(ctx, end.x, (start.y + end.y) / 2, selectionRad);
         ctx.setLineDash([1]);
         ctx.lineWidth = styles.width;
         ctx.strokeStyle = styles.strokeStyle;
@@ -264,20 +251,34 @@ const generate1dShape: ShapeGenerator = (point, context, styles) => {
       };
     },
     checkIntersection(point) {
-      const OFFSET = 2;
+      const OFFSET = 4;
       const { start, end } = this;
       //    A      C      B
       //    *------*------*
       const AC = getDistance(start, point);
       const BC = getDistance(end, point);
       const AB = getDistance(start, end);
-      if (
-        isNear(point.x, start.x, point.y, start.y, OFFSET) ||
-        isNear(point.x, end.x, point.y, end.y, OFFSET)
-      )
-        return 'point';
+      if (isNear(point.x, start.x, point.y, start.y, OFFSET)) return 'start';
+      if (isNear(point.x, end.x, point.y, end.y, OFFSET)) return 'end';
       if (AC + BC <= AB + styles.width + OFFSET) return 'in';
       return null;
+    },
+    showSelection() {
+      const selectionRad = 5;
+      const { start, end } = this;
+      if (this.selected) {
+        const ctx = this.context;
+        const styles = this.styles;
+        ctx.fillStyle = '#BF40BF';
+        ctx.strokeStyle = '#BF40BF';
+        ctx.lineWidth = 5;
+        drawCircle(ctx, start.x, start.y, selectionRad);
+        drawCircle(ctx, end.x, end.y, selectionRad);
+        ctx.setLineDash([1]);
+        ctx.lineWidth = styles.width;
+        ctx.strokeStyle = styles.strokeStyle;
+        ctx.fillStyle = styles.fillStyle;
+      }
     },
   };
 };
@@ -351,8 +352,8 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
             0,
             2 * Math.PI
           );
-          this.context.stroke();
           this.context.fill();
+          this.context.stroke();
           this.context.closePath();
           this.showSelection();
         },
@@ -387,6 +388,7 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
             headLen,
             Math.PI / 6
           );
+          this.showSelection();
         },
       };
     },
@@ -404,6 +406,7 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
           this.applyStyles();
           const { start, end } = this;
           drawLine({ start, end }, this.context);
+          this.showSelection();
         },
       };
     },
@@ -413,13 +416,6 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'eraser',
     icon: <BsFillEraserFill size={sizes.md} title='Eraser' />,
     hotkey: 'e',
-    action: () => {},
-  },
-  {
-    type: 'util',
-    title: 'text',
-    icon: <div className='text-[1.75rem] leading-7'>A</div>,
-    hotkey: 't',
     action: () => {},
   },
 ];

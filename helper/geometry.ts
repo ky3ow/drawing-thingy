@@ -14,7 +14,11 @@ const drawRect: DrawFunc<[rounded?: number]> = (
 ) => {
   if (rounded > 0.5) rounded = 0.5;
   const radius = Math.min(end.x - start.x, end.y - start.y) * rounded;
-  context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y)
+  context.beginPath();
+  context.rect(start.x, start.y, end.x - start.x, end.y - start.y);
+  context.closePath();
+  context.fill();
+  context.stroke();
   const a = Math.min(end.x - start.x, end.y - start.y) * rounded;
 };
 
@@ -101,4 +105,13 @@ const drawArrowHead: DrawFunc<[headlen: number, angle: number]> = (
   context.closePath();
 };
 
-export { drawRect, drawLine, drawArrowHead, getSnapPoint, getDistance };
+const drawCircle = (ctx: CanvasRenderingContext2D, x: number, y: number, r: number) => {
+  ctx.moveTo(x,y);
+  ctx.beginPath();
+  ctx.ellipse(x, y, r, r, 360, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.fill();
+}
+
+export { drawRect, drawLine, drawArrowHead, drawCircle, getSnapPoint, getDistance };

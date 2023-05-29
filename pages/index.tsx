@@ -45,6 +45,9 @@ const useElements = (initialState: Shape[]) => {
   };
 
   const [selectedElement, _setSelected] = useState<Shape>();
+  const isSelected = useMemo(() => {
+    return !!selectedElement?.id;
+  }, [selectedElement?.id])
 
   const getSelected = () => {
     return getElementById(selectedElement?.id);
@@ -69,6 +72,7 @@ const useElements = (initialState: Shape[]) => {
     updateElements,
     getSelected,
     setSelected,
+    isSelected,
   };
 };
 
@@ -84,6 +88,7 @@ const Home: NextPage = () => {
     updateElements,
     getSelected,
     setSelected,
+    isSelected,
   } = useElements([]);
   const tool = useMemo(() => {
     return tools.find((tool) => tool.title === activeTool);
@@ -141,12 +146,13 @@ const Home: NextPage = () => {
     if (tool?.title === 'cursor') {
       const [_, pos] = getElementAtPosition(point);
       let cursorType;
-      if (getSelected()) {
+      if (isSelected) {
         switch (pos) {
           case 'in':
             cursorType = 'move';
             break;
-          case 'point':
+          case 'start':
+          case 'end':
             cursorType = 'pointer';
             break;
           case 'tl':
@@ -168,7 +174,7 @@ const Home: NextPage = () => {
           default:
             cursorType = 'default';
         }
-      } else if (pos === 'in') {
+      } else if (pos) {
         cursorType = 'move';
       } else {
         cursorType = 'default';
@@ -185,6 +191,7 @@ const Home: NextPage = () => {
     const point = { x: offsetX, y: offsetY };
     switch (tool.type) {
       case 'shape': {
+        console.log('when drawing', styles)
         const element = tool.generateShape(point, ctxRef.current, styles);
         setElements([...elements, element]);
         setStatus('drawing');
@@ -192,21 +199,27 @@ const Home: NextPage = () => {
       }
       case 'selection': {
         const [element, position] = getElementAtPosition(point);
-        setPosition(position);
-        if (position === 'in') {
+        if(isSelected && !position) {
+          setSelected(undefined);
+        } else if(isSelected && position !== 'in') {
+          setStatus('resizing');
+          element!.setOffset(point);
+        } else {
           if (element) {
             setStatus('moving');
             element.setOffset(point);
             updateElements(element);
             setSelected(element);
           }
-        } else if (position === null) {
-          setSelected(undefined);
-        } else {
-          setStatus('resizing');
-          element!.setOffset(point);
         }
+        setPosition(position);
         break;
+      }
+      case 'util': {
+        const [element, _] = getElementAtPosition(point);
+        if(tool.title === 'eraser' && element) {
+          setElements(elements => elements.filter(el => el.id !== element.id))
+        }
       }
     }
   };
@@ -227,14 +240,68 @@ const Home: NextPage = () => {
       case 'selection': {
         const element = getSelected();
         if (!element) return;
-        switch (position) {
-          case 'in': {
-            element.move(endPoint);
-            break;
-          }
-          case 'tl': {
-            element.transform(endPoint, element.end);
-            break;
+        if (status === 'moving') {
+          element.move(endPoint);
+        } else {
+          switch (position) {
+            case 'tl': {
+              element.transform(endPoint, element.end);
+              break;
+            }
+            case 'tr': {
+              element.transform(
+                { x: element.start.x, y: endPoint.y },
+                { x: endPoint.x, y: element.end.y }
+              );
+              break;
+            }
+            case 'bl': {
+              element.transform(
+                { x: endPoint.x, y: element.start.y },
+                { x: element.end.x, y: endPoint.y }
+              );
+              break;
+            }
+            case 'br': {
+              element.transform(element.start, endPoint);
+              break;
+            }
+            case 't': {
+              element.transform(
+                { x: element.start.x, y: endPoint.y },
+                { x: element.end.x, y: element.end.y }
+              );
+              break;
+            }
+            case 'b': {
+              element.transform(
+                { x: element.start.x, y: element.start.y },
+                { x: element.end.x, y: endPoint.y }
+              );
+              break;
+            }
+            case 'l': {
+              element.transform(
+                { x: endPoint.x, y: element.start.y },
+                { x: element.end.x, y: element.end.y }
+              );
+              break;
+            }
+            case 'r': {
+              element.transform(
+                { x: element.start.x, y: element.start.y },
+                { x: endPoint.x, y: element.end.y }
+              );
+              break;
+            }
+            case 'end': {
+              element.transform(element.start, endPoint);
+              break;
+            }
+            case 'start': {
+              element.transform(endPoint, element.end);
+              break;
+            }
           }
         }
         updateElements(element);
@@ -262,22 +329,13 @@ const Home: NextPage = () => {
         <link rel='icon' href='/favicon.ico' />
       </Head>
       <main
-        className={`flex min-h-screen transition-colors duration-500 dark:bg-zinc-900 ${
-          formVisible ? 'saturate-50 filter' : ''
-        }`}
+        className={`flex min-h-screen transition-colors duration-500 dark:bg-zinc-900`}
       >
-        <div
-          className={`z-5 absolute inset-0 flex items-center justify-center bg-slate-900 bg-opacity-30 ${
-            formVisible ? 'block' : 'hidden'
-          }`}
-        >
-          <Form close={() => setFormVisible(false)} />
-        </div>
         <aside className='flex min-w-max  flex-col items-center gap-4 p-2 py-4 shadow-lg shadow-black/50 dark:bg-zinc-800/75 dark:shadow-transparent'>
-          <button onClick={() => setFormVisible((e) => !e)}>
+          <a target='blank' href="https://github.com/volodymyr-havryliuk165">
             <Logo className=' hover:text-rose-600' />
-          </button>
-          <Controls tool={activeTool} setter={setTool} />
+          </a>
+          <Controls elements={elements} setElements={setElements} tool={activeTool} setter={setTool} />
         </aside>
         <div className='flex grow overflow-x-auto'>
           <canvas
