@@ -100,7 +100,6 @@ const LoginTab = () => {
       className='grid gap-3'
       onSubmit={(e) => {
         e.preventDefault();
-        console.log('123');
         handleSubmit(onSubmit)();
       }}
     >

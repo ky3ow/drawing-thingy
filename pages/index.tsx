@@ -23,7 +23,7 @@ const useElements = (initialState: Shape[]) => {
     return elements.find((e) => e.id === id);
   };
   const getElementAtPosition = (point: Point): [Shape | null, Position] => {
-    for (const element of elements) {
+    for (const element of elements.slice().reverse()) {
       const pos = element.checkIntersection(point);
       if(pos) return [element, pos];
     }
@@ -123,7 +123,6 @@ const Home: NextPage = () => {
     };
 
     window.addEventListener('resize', handleResize);
-
     return () => {
       window.removeEventListener('resize', handleResize);
     };
@@ -191,7 +190,6 @@ const Home: NextPage = () => {
     const point = { x: offsetX, y: offsetY };
     switch (tool.type) {
       case 'shape': {
-        console.log('when drawing', styles)
         const element = tool.generateShape(point, ctxRef.current, styles);
         setElements([...elements, element]);
         setStatus('drawing');
@@ -335,7 +333,7 @@ const Home: NextPage = () => {
           <a target='blank' href="https://github.com/volodymyr-havryliuk165">
             <Logo className=' hover:text-rose-600' />
           </a>
-          <Controls elements={elements} setElements={setElements} tool={activeTool} setter={setTool} />
+          <Controls ctx={canvasRef.current?.getContext('2d')}  elements={elements} setElements={setElements} tool={activeTool} setter={setTool} />
         </aside>
         <div className='flex grow overflow-x-auto'>
           <canvas

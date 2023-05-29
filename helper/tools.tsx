@@ -65,7 +65,19 @@ type Selectable = {
   showSelection: () => void;
 };
 
-type Position = 'tl' | 't' | 'tr' | 'l' | 'bl' | 'b' | 'br' | 'r' | 'start' | 'end' | 'in' | null;
+type Position =
+  | 'tl'
+  | 't'
+  | 'tr'
+  | 'l'
+  | 'bl'
+  | 'b'
+  | 'br'
+  | 'r'
+  | 'start'
+  | 'end'
+  | 'in'
+  | null;
 
 type Shape = {
   readonly id: string;
@@ -75,9 +87,16 @@ type Shape = {
   checkIntersection: (point: Point) => Position;
   transform: (start: Point, end: Point) => void;
   normalize: () => void;
+  type: 'rect' | 'circ' | 'line' | 'arrw' | undefined;
 } & Coordinates &
   Stylable &
   Selectable;
+
+type ShapeGeneratorFunction = (
+  point: Point,
+  context: CanvasRenderingContext2D,
+  styles: Styles
+) => Shape;
 
 interface Tool {
   title: ToolState;
@@ -88,11 +107,7 @@ interface Tool {
 
 interface ShapeTool extends Tool {
   type: 'shape';
-  generateShape: (
-    point: Point,
-    context: CanvasRenderingContext2D,
-    styles: Styles
-  ) => Shape;
+  generateShape: ShapeGeneratorFunction;
 }
 
 interface UtilTool extends Tool {
@@ -113,7 +128,8 @@ interface MoveTool extends Tool {
 type ShapeGenerator = (
   point: Point,
   context: CanvasRenderingContext2D,
-  styles: Styles
+  styles: Styles,
+  type: 'rect' | 'circ' | 'line' | 'arrw' | undefined
 ) => Shape;
 
 const isNear = (
@@ -126,7 +142,89 @@ const isNear = (
   return Math.abs(x - x1) <= offset && Math.abs(y - y1) <= offset;
 };
 
-const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
+const generateRect: ShapeGeneratorFunction = (point, context, styles) => {
+  const defaultProps = generate2dShape(point, context, styles, 'rect');
+  return {
+    ...defaultProps,
+    render() {
+      this.applyStyles();
+      // 2 : 4 : 12 // 0.5 0.25 0.08 0
+      const rounding = 0;
+      const { start, end } = this;
+      drawRect({ start, end }, this.context, rounding);
+      this.showSelection();
+    },
+  };
+};
+
+const generateCirc: ShapeGeneratorFunction = (point, context, styles) => {
+  const defaultProps = generate2dShape(point, context, styles, 'circ');
+  return {
+    ...defaultProps,
+    render() {
+      this.applyStyles();
+      this.context.beginPath();
+      const { start, end } = this;
+      const rx = Math.abs(end.x - start.x) / 2;
+      const ry = Math.abs(end.y - start.y) / 2;
+      const ix = end.x > start.x ? 1 : -1;
+      const iy = end.y > start.y ? 1 : -1;
+      this.context.ellipse(
+        start.x + rx * ix,
+        start.y + ry * iy,
+        rx,
+        ry,
+        0,
+        0,
+        2 * Math.PI
+      );
+      this.context.fill();
+      this.context.stroke();
+      this.context.closePath();
+      this.showSelection();
+    },
+  };
+};
+
+const generateArrw : ShapeGeneratorFunction = (point, context, styles) => {
+      const defaultProps = generate1dShape(point, context, styles, 'arrw');
+      return {
+        ...defaultProps,
+        render() {
+          this.applyStyles();
+          const { start, end } = this;
+          drawLine({ start, end }, this.context);
+
+          // headLen - distance between two points by formula * some ratio
+          const headLen = Math.min(
+            Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2) * 1,
+            50
+          );
+          drawArrowHead({ start, end }, this.context, headLen, Math.PI / 6);
+          this.showSelection();
+        },
+      };
+    }
+
+    const generateLine : ShapeGeneratorFunction = (point, context, styles) => {
+      const defaultProps = generate1dShape(point, context, styles, 'line');
+      return {
+        ...defaultProps,
+        render() {
+          this.applyStyles();
+          const { start, end } = this;
+          drawLine({ start, end }, this.context);
+          this.showSelection();
+        },
+      };
+    }
+
+const generateDefaultShape: ShapeGenerator = (
+  point,
+  context,
+  styles,
+  type = undefined
+) => {
   return {
     id: nextId(),
     start: { ...point },
@@ -134,6 +232,7 @@ const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
     selected: false,
     context,
     styles,
+    type,
     normalize() {
       throw new Error('normalizing coordinates not implemented');
     },
@@ -180,9 +279,9 @@ const generateDefaultShape: ShapeGenerator = (point, context, styles) => {
   };
 };
 
-const generate2dShape: ShapeGenerator = (point, context, styles) => {
+const generate2dShape: ShapeGenerator = (point, context, styles, type) => {
   return {
-    ...generateDefaultShape(point, context, styles),
+    ...generateDefaultShape(point, context, styles, type),
     normalize() {
       const minX = Math.min(this.start.x, this.end.x);
       const maxX = Math.max(this.start.x, this.end.x);
@@ -241,9 +340,9 @@ const generate2dShape: ShapeGenerator = (point, context, styles) => {
   };
 };
 
-const generate1dShape: ShapeGenerator = (point, context, styles) => {
+const generate1dShape: ShapeGenerator = (point, context, styles, type) => {
   return {
-    ...generateDefaultShape(point, context, styles),
+    ...generateDefaultShape(point, context, styles, type),
     normalize() {
       return {
         start: this.start,
@@ -311,54 +410,14 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
     title: 'rectangle',
     icon: <BiRectangle size={sizes.md} title='rectangle' />,
     hotkey: 'r',
-    generateShape: (point, context, styles) => {
-      const defaultProps = generate2dShape(point, context, styles);
-      return {
-        ...defaultProps,
-        render() {
-          this.applyStyles();
-          // 2 : 4 : 12 // 0.5 0.25 0.08 0
-          const rounding = 0;
-          const { start, end } = this;
-          drawRect({ start, end }, this.context, rounding);
-          this.showSelection();
-        },
-      };
-    },
+    generateShape: generateRect,
   },
   {
     type: 'shape',
     title: 'circle',
     icon: <BiCircle size={sizes.md} title='circle' />,
     hotkey: 'c',
-    generateShape: (point, context, styles) => {
-      const defaultProps = generate2dShape(point, context, styles);
-      return {
-        ...defaultProps,
-        render() {
-          this.applyStyles();
-          this.context.beginPath();
-          const { start, end } = this;
-          const rx = Math.abs(end.x - start.x) / 2;
-          const ry = Math.abs(end.y - start.y) / 2;
-          const ix = end.x > start.x ? 1 : -1;
-          const iy = end.y > start.y ? 1 : -1;
-          this.context.ellipse(
-            start.x + rx * ix,
-            start.y + ry * iy,
-            rx,
-            ry,
-            0,
-            0,
-            2 * Math.PI
-          );
-          this.context.fill();
-          this.context.stroke();
-          this.context.closePath();
-          this.showSelection();
-        },
-      };
-    },
+    generateShape: generateCirc
   },
   {
     type: 'shape',
@@ -367,49 +426,14 @@ const tools: readonly (ShapeTool | UtilTool | MoveTool)[] = [
       <HiArrowNarrowLeft size={sizes.md} title='Arrow' className='-rotate-45' />
     ),
     hotkey: 'a',
-    generateShape: (point, context, styles) => {
-      const defaultProps = generate1dShape(point, context, styles);
-      return {
-        ...defaultProps,
-        render() {
-          this.applyStyles();
-          const { start, end } = this;
-          drawLine({ start, end}, this.context);
-
-          // headLen - distance between two points by formula * some ratio
-          const headLen = Math.min(
-            Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2) *
-              1,
-            50
-          );
-          drawArrowHead(
-            { start, end },
-            this.context,
-            headLen,
-            Math.PI / 6
-          );
-          this.showSelection();
-        },
-      };
-    },
+    generateShape: generateArrw,
   },
   {
     type: 'shape',
     title: 'line',
     icon: <AiOutlineLine size={sizes.md} title='Line' className='-rotate-45' />,
     hotkey: 'l',
-    generateShape: (point, context, styles) => {
-      const defaultProps = generate1dShape(point, context, styles);
-      return {
-        ...defaultProps,
-        render() {
-          this.applyStyles();
-          const { start, end } = this;
-          drawLine({ start, end }, this.context);
-          this.showSelection();
-        },
-      };
-    },
+    generateShape: generateLine,
   },
   {
     type: 'util',
@@ -437,4 +461,4 @@ export type {
   Point,
   Position,
 };
-export { tools, defaultStyles };
+export { tools, defaultStyles, generateRect, generateCirc, generateArrw, generateLine };
